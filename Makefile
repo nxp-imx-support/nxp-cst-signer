@@ -1,5 +1,5 @@
 #==============================================================================
-#    Copyright 2022 NXP
+#    Copyright 2022-23 NXP
 #
 #    SPDX-License-Identifier: GPL-2.0-or-later
 #==============================================================================
@@ -13,4 +13,4 @@ all:
 	@mv $(SRC_DIR)/cst_signer .
 
 clean:
-	@rm -rf cst_signer
+	@rm -rf cst_signer src/fdt.o

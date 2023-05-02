@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 NXP
+ * Copyright 2022-23 NXP
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
@@ -39,8 +39,6 @@ int search_app_container(flash_header_v3_t *container_hdrs, int num_cntrs, flash
 {
     int off[MAX_NUM_OF_CONTAINER];
     int end = 0, last = g_image_offset;
-    int img_array_size = 0;
-    off_t err;
 
     off[0] = 0;
 

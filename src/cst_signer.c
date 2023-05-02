@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 NXP
+ * Copyright 2022-23 NXP
  *
  * SPDX-License-Identifier:     GPL-2.0-or-later
  *
@@ -8,7 +8,8 @@
 #include "cst_signer.h"
 #include "cfg_parser.h"
 #include "mkimage_helper.h"
-
+#include "fdt.h"
+#include <limits.h>
 #define RSIZE   256
 
 uint32_t g_image_offset = 0;
@@ -19,14 +20,103 @@ typedef struct {
     uint32_t sig_offset;
 } __attribute__((packed)) csf_params_t;
 
+image_block_t g_images[NUM_IMGS];
+
+/*
+ * @brief      Search for pattern in buffer
+ *
+ * @param[in]   buff       : Input buffer to search into
+ * @param[in]   pattern  : Input pattern
+ * @param[in]   patt_len : Input pattern length
+ * @param[in]   pos      : Position where to start the search from
+ * @param[in]   order    : Search order from @pos: ascending or descending
+ * @param[in]   mask     : Mask bytes in @pattern
+ * @param[in]   is_ivt   : Search pattern. If is_ivt is true this will determine
+ *                           the search to be 4 bytes step.
+ *
+ * @retval      Return offset in buffer for the pattern. If pattern not found,
+ *                 return buff_len + 1.
+ */
+unsigned long search_pattern(const unsigned char *buff, unsigned char *pattern,
+                 size_t buff_len, size_t patt_len, unsigned short order,
+                             unsigned long pos, unsigned char *mask, bool is_ivt)
+{
+    unsigned long off, step;
+    short found = 0;
+    char temp[patt_len];
+
+    buff += pos;
+    memset(temp, 0, patt_len);
+    if (mask) {
+        for (int j = 0; j < patt_len; j++)
+            pattern[j] = pattern[j] & mask[j];
+    }
+
+    if (!is_ivt) {
+        step = 1;
+    } else {
+        step = 4;
+    }
+
+    /*search in ascending order */
+    if (order == ASCENDING) {
+        /* no search optimization */
+        for (off = pos; off < (buff_len - patt_len + 1); off += step) {
+            if (mask) {/*  some values can be masked, e.g. length inside IVT tag */
+                memcpy(temp, buff, patt_len);
+                for (int j = 0; j < patt_len; j++) {
+                    temp[j] = temp[j] & mask[j];
+                }
+                if (!memcmp(pattern, temp, patt_len)) {
+                    found = 1;
+                    break;
+                }
+            } else {
+                if (!memcmp(pattern, buff, patt_len)) {
+                    found = 1;
+                    break;
+                }
+            }
+            buff += step;
+        }
+    } else {/*search in descending order */
+        for (off = pos; off >= (patt_len - 1) ;off -= step) {
+            if (mask) {
+                memcpy(temp, (buff - patt_len + 1), patt_len);
+                for (int j = 0; j < patt_len; j++) {
+                    temp[j] = temp[j] & mask[j];
+                }
+                if (!memcmp(pattern, temp, patt_len)) {
+                    found = 1;
+                    off = off - patt_len + 1;
+                    break;
+                }
+            } else {
+                if (!memcmp(pattern, (buff - patt_len + 1),
+                        patt_len)) {
+                    found = 1;
+                    off = off - patt_len + 1;
+                    break;
+                }
+            }
+            buff -= step;
+        }
+    }
+
+    if (!found)
+        off = buff_len + 1;
+
+    return off;
+}
+
 /*
  * @brief       Common function to call CST to sign the generated CSF file
  *
  * @param[in]   ifname  : Input CSF filename
  * @param[out]  ofname  : Output signed filename
  *
- * @retval      -1      : Failure
- *               0      : Success
+ * @retval      -E_FAILURE : Failure
+ *               E_OK      : Success
  */
 int sign_csf(char *ifname, char *ofname)
 {
@@ -38,17 +128,17 @@ int sign_csf(char *ifname, char *ofname)
     /* Checking if processor is available */
     if (!(system(NULL))) {
         fprintf(stderr, "ERROR: Command processor is not available. Exiting.\n");
-        return -1;
+        return -E_FAILURE;
     }
 #if defined(__linux__)
     if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/linux64/bin/cst ", g_cst_path))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
-        return -1;
+        return -E_FAILURE;
     }
 #elif defined(_WIN32) || defined(_WIN64)
     if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/mingw32/bin/cst.exe ", g_cst_path)) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
-        return -1;
+        return -E_FAILURE;
     }
 #else
     #error Unsupported OS
@@ -56,7 +146,7 @@ int sign_csf(char *ifname, char *ofname)
     
     if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), "--i %s --o %s", ifname, ofname))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
-        return -1;
+        return -E_FAILURE;
     }
 
     /* Execute command */
@@ -70,15 +160,14 @@ int sign_csf(char *ifname, char *ofname)
  * @param[in]   ifname  : Input file
  * @param[out]  ofname  : Output file
  *
- * @retval      -1      : Success
- *               0      : Failure
+ * @retval     -E_FAILURE : Success
+ *              E_OK      : Failure
  */
 int copy_files(char *ifname, char *ofname)
 {
     ASSERT(ifname, -1);
     ASSERT(ofname, -1);
 
-    char ch;
     long int ifname_size = 0;
     unsigned char *buf = NULL;
     size_t result_size = 0;
@@ -127,34 +216,37 @@ int copy_files(char *ifname, char *ofname)
     FREE(buf);
     FCLOSE(fp_ifname);
     FCLOSE(fp_ofname);
-    return 0;
+    return E_OK;
 
 err:
     FREE(buf);
     FCLOSE(fp_ifname);
     FCLOSE(fp_ofname);
-    return -1;
-
+    return -E_FAILURE;
 }
 
 /*
- * @brief       Create CSF file for IVT type v1
+ * @brief       Create CSF source file for IVT type v1
  *
- * @param[in]   csf_filename    : CSF filename to be populated
- *              ifname          : Input filename
- *              csf_param       : CSF parameters config file
+ * @param[in]   blocks     : Data blocks that will be authenticated
+ *              idx        : CSF file has a standard naming csf_image%d.txt
+ *                           idx represents the index of the CSF file and will
+ *                           be appended in the name
+ * @param[out]  ofname     : The name of the generated CSF source file
  *
- * @retval      -1  : Failure
- *               0  : Success
+ * @retval      -E_FAILURE      : Failure
+ *               E_OK           : Success
  */
-static int create_csf_file_v1(char *csf_filename, char *ifname, csf_params_t *csf_param)
+static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
 {
-    ASSERT(csf_filename, -1);
-    ASSERT(ifname, -1);
-    ASSERT(csf_param, -1);
-
+    char csf_filename[100UL] = {0};
     char rvalue[RSIZE] = {0};
     bool fast_auth = false;
+
+    if (0 > (snprintf(csf_filename, sizeof(csf_filename), "csf_image%d.txt", idx))) {
+        fprintf(stderr, "ERROR: Cannot populate CSF file name.\n");
+        goto err;
+    }
 
     /* Create CSF file with CSF parameters */
     FILE *fp_csf_file = fopen(csf_filename, "w");
@@ -276,7 +368,7 @@ static int create_csf_file_v1(char *csf_filename, char *ifname, csf_params_t *cs
                           } while(0)
 
     /* Parse engines and features*/
-    if (engines[0] && features[0]) {
+    if (strlen(engines[0]) && strlen(features[0])) {
         for (int i = 0; i < NUM_ENGINES; i++) {
             if (!strncmp(engines[i], "SRTC", 4)) {
                 fprintf(fp_csf_file, "[Unlock]\n");
@@ -350,20 +442,38 @@ static int create_csf_file_v1(char *csf_filename, char *ifname, csf_params_t *cs
         fprintf(fp_csf_file, "\tVerification index = 0\n");
     }
 
-    // TODO: Add blocks statement here
+    fprintf(fp_csf_file, "\tBlocks = ");
 
-    /* DONE */
+    for (int cnt = 0; cnt < NUM_IMGS; cnt++) {
+        if (!blocks[cnt].valid)
+            continue;
+
+        if (cnt) {
+                fprintf(fp_csf_file, "\t         ");
+        }
+
+        fprintf(fp_csf_file, "0x%08lX 0x%08lX 0x%08lX \"%s\"",
+                blocks[cnt].load_addr,
+                blocks[cnt].offset,
+                blocks[cnt].size, ofname);
+
+            if (cnt != (NUM_IMGS - 1) && blocks[cnt + 1].valid)
+                fprintf(fp_csf_file, ", \\");
+
+            fprintf(fp_csf_file, "\n");
+    }
+
 
     printf("INFO: %s generated\n", csf_filename);
 
     FCLOSE(fp_csf_file);
     FCLOSE(fp_cfg);
-    return 0;
+    return E_OK;
 
 err:
     FCLOSE(fp_csf_file);
     FCLOSE(fp_cfg);
-    return -1;
+    return -E_FAILURE;
 }
 
 
@@ -374,8 +484,8 @@ err:
  *              ifname          : Input filename
  *              csf_param       : CSF parameters config file
  *
- * @retval      -1              : Failure
- *               0              : Success
+ * @retval     -E_FAILURE       : Failure
+ *              E_OK            : Success
  */
 static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *csf_param)
 {
@@ -473,29 +583,12 @@ static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *cs
 
     FCLOSE(fp_csf_file);
     FCLOSE(fp_cfg);
-    return 0;
+    return E_OK;
 
 err:
     FCLOSE(fp_csf_file);
     FCLOSE(fp_cfg);
-    return -1;
-}
-
-/*
- * @brief       Sign image of IVT type v1
- *
- * @param[in]   infile_buf  : Input file buffer
- *              infile_size : Input file size
- *              ifname_full : Input filename
- * @param[out]  ofname      : Ouput filename
- *
- * @retval      -1          : Failure
- *               0          : Success
- */
-static int sign_image(const uint8_t *infile_buf, long int infile_size, char *ifname_full, char *ofname)
-{
-    puts("Nothing Yet!!");
-    return -1;
+    return -E_FAILURE;
 }
 
 /*
@@ -506,8 +599,8 @@ static int sign_image(const uint8_t *infile_buf, long int infile_size, char *ifn
  *              ifname_full : Input filename
  * @param[out]  ofname      : Ouput filename
  *
- * @retval      0           : Success
- *              -1          : Failure
+ * @retval       E_OK           : Success
+ *              -E_FAILURE      : Failure
  */
 static int sign_container(const uint8_t *infile_buf, long int infile_size, char *ifname_full, char *ofname)
 {
@@ -536,41 +629,48 @@ static int sign_container(const uint8_t *infile_buf, long int infile_size, char 
                 16);
     
         /* check that the current container has a valid tag */
-        if (container_headers[cntr_num].tag != IVT_HEADER_TAG_B0)
+        if (container_headers[cntr_num].tag != IVT_HEADER_TAG_B0 && \
+            container_headers[cntr_num].tag != IVT_HEADER_TAG_MSG)
             break;
 
         /* Validate number of images */
         if (container_headers[cntr_num].num_images > MAX_NUM_IMGS) {
             fprintf(stderr, "ERROR: This container includes %d images, beyond max %d images\n", container_headers[cntr_num].num_images, MAX_NUM_IMGS);
             break;
+        /* Message container does not have images */
+        } else if (container_headers[cntr_num].tag == IVT_HEADER_TAG_MSG && \
+                   0 != container_headers[cntr_num].num_images) {
+            fprintf(stderr, "ERROR: Messages cannot contain images\n");
+            break;
         }
         
         /* compute the size of the image array */
         img_array_size = container_headers[cntr_num].num_images * sizeof(boot_img_t);
-
-        /* read in the full image array */
-        memcpy((void *)&container_headers[cntr_num].img, \
-            &((flash_header_v3_t *)(file_off + g_image_offset + infile_buf))->img, \
-            img_array_size);
+        if (img_array_size) {
+            /* read in the full image array */
+            memcpy((void *)&container_headers[cntr_num].img, \
+                &((flash_header_v3_t *)(file_off + g_image_offset + infile_buf))->img, \
+                img_array_size);
     
-        /* determine the type of image */
-        boot_img_t img = container_headers[cntr_num].img[0];
-        img_flags_t img_flags;
-        img_flags.type = img.hab_flags & IMAGE_TYPE_MASK;
-        DEBUG("Image Flag type: 0x%X\n", img_flags.type);
+            /* determine the type of image */
+            boot_img_t img = container_headers[cntr_num].img[0];
+            img_flags_t img_flags;
+            img_flags.type = img.hab_flags & IMAGE_TYPE_MASK;
+            DEBUG("Image Flag type: 0x%X\n", img_flags.type);
 
-        /* If container contains signed images provided by NXP like SECO/SENTINEL/V2X, then no need to sign this container. Skip to next one. */
-        if (img_flags.type == 0x6 || \
-            img_flags.type == 0xB || \
-            img_flags.type == 0xC) {
-            DEBUG("Container %d already signed\n", cntr_num);
-            /* calculate next container offset in binary */
-            file_off += ALIGN(container_headers[cntr_num].length, CONTAINER_ALIGNMENT);
-            DEBUG("file_off = 0x%08X\n", file_off);
+            /* If container contains signed images provided by NXP like SECO/SENTINEL/V2X, then no need to sign this container. Skip to next one. */
+            if (img_flags.type == 0x6 || \
+                img_flags.type == 0xB || \
+                img_flags.type == 0xC) {
+                DEBUG("Container %d already signed\n", cntr_num);
+                /* calculate next container offset in binary */
+                file_off += ALIGN(container_headers[cntr_num].length, CONTAINER_ALIGNMENT);
+                DEBUG("file_off = 0x%08X\n", file_off);
 
-            /* increment current container count */
-            cntr_num++;
-            continue;
+                /* increment current container count */
+                cntr_num++;
+                continue;
+            }
         }
 
         /* Fill CSF parameters */
@@ -616,7 +716,7 @@ static int sign_container(const uint8_t *infile_buf, long int infile_size, char 
     /* Copy file to be signed to a temporary file */
     if(copy_files(ifname_full, itemp_fname)) {
         fprintf(stderr, "ERROR: Failed to copy files: %s and %s\n", ifname_full, itemp_fname);
-        return -1;
+        return -E_FAILURE;
     }
     
     /* Create CSF files & sign them */
@@ -678,11 +778,11 @@ static int sign_container(const uint8_t *infile_buf, long int infile_size, char 
         FREE(csf_filename);
     }
 
-    return 0;
+    return E_OK;
 
 err:
     FREE(csf_filename);
-    return -1;
+    return -E_FAILURE;
 }
 
 /*
@@ -699,14 +799,14 @@ long int get_file_size(FILE *fp, char *input_file)
 
     if (NULL == input_file) {
         fprintf(stderr, "ERROR: Invalid file: %s\n", input_file);
-        return -1;
+        return -E_FAILURE;
     }
 
     /* Open file */
     fp = fopen(input_file, "rb");
     if (NULL == fp) {
         fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", input_file, strerror(errno));
-        return -1;
+        return -E_FAILURE;
     }
     
     /* Seek to the end of file to calculate size */
@@ -714,7 +814,7 @@ long int get_file_size(FILE *fp, char *input_file)
         errno = ENOENT; 
         fprintf(stderr, "ERROR: Couldn't seek to end of file: %s; %s\n", input_file, strerror(errno));
         FCLOSE(fp);
-        return -1;
+        return -E_FAILURE;
     }
 
     /* Get size and go back to start of the file */
@@ -774,9 +874,575 @@ unsigned char *alloc_buffer(FILE *fp, char *input_file)
 }
 
 /*
- * @brief       Prints the usage information for running encrypt_image
+ * @brief      Insert CSF data from ifile1 into ifile2 starting at offset
+ *
+ * @param[in]   ifile1     : Input file that contains the Command Sequence File
+ *              offset     : Offset of the CSF in ifile2
+ *
+ * @param[out]  ifile2     : Output file that contains the flash image.
+ *
+ * @retval     -E_FAILURE  : Failure
+ *              E_OK       : Success
  */
-static void print_usage(void) {
+static int insert_csf(char *ifile1, char *ifile2, uint32_t offset)
+{
+    FILE *fp1 = NULL;
+    FILE *fp2 = NULL;
+    long int ifile1_size, result_size;
+    unsigned char *buf = NULL;
+
+    ifile1_size = get_file_size(fp1, ifile1);
+    if (0 > ifile1_size) {
+        fprintf(stderr,
+                "ERROR: Invalid file size %ld of file: %s\n",
+                ifile1_size, ifile1);
+        goto err;
+    }
+
+    /* Allocate memory to the buffer */
+    buf = malloc(ifile1_size);
+    if (buf == NULL) {
+        fprintf(stderr, "ERROR: Error allocating memory; %s\n", strerror(errno));
+        goto err;
+    }
+
+    fp1 = fopen(ifile1, "rb");
+    fp2 = fopen(ifile2, "r+b");
+
+    if (NULL == fp1 || NULL == fp2) {
+        fprintf(stderr, "ERROR: Couldn't open one of the files : %s or %s %s\n",
+                ifile1, ifile2, strerror(errno));
+       goto err;
+    }
+
+    result_size = fread(buf, 1, ifile1_size, fp1);
+    /* Copy input file to output file */
+    if (result_size != ifile1_size) {
+        fprintf(stderr, "ERROR: File read error; %s\n", strerror(errno));
+        goto err;
+    }
+
+
+    if (fseek (fp2, offset, SEEK_SET)) {
+        fprintf(stderr, "ERROR: Cannot set pointer to %x offset; %s\n",offset,
+                strerror(errno));
+        goto err;
+    }
+
+    result_size = fwrite(buf, 1, ifile1_size, fp2);
+    if (result_size != ifile1_size) {
+        fprintf(stderr, "ERROR: File write error; %s\n", strerror(errno));
+        goto err;
+    }
+
+    FCLOSE(fp1);
+    FCLOSE(fp2);
+    FREE(buf);
+    return E_OK;
+
+err:
+    FCLOSE(fp1);
+    FCLOSE(fp2);
+    FREE(buf);
+    return -E_FAILURE;
+}
+
+
+
+/*
+ * @brief      Concatenate two files and put the result in the first file
+ *
+ * @param[in]   ifile1     : Input file1
+ *              ifile2     : Input file2
+ *
+ * @retval     -E_FAILURE  : Failure
+ *              E_OK       : Success
+ */
+int concat_files(char *ifname1, char *ifname2)
+{
+    char tmp_file[100UL] = {0};
+    FILE *fp1 = NULL;
+    FILE *fp2 = NULL;
+    FILE *fp3 = NULL;
+    unsigned char *buf = NULL;
+    long int ifile1_size, ifile2_size, result_size;
+
+    if (0 > (snprintf(tmp_file, sizeof(tmp_file), "temp.bin"))) {
+        fprintf(stderr, "ERROR: Cannot populate temp file name.\n");
+        return -E_FAILURE;
+    }
+
+    ifile1_size = get_file_size(fp1, ifname1);
+
+    if (0 > ifile1_size) {
+        fprintf(stderr,
+                "ERROR: Invalid file size %ld of file: %s\n",
+                ifile1_size, ifname1);
+        goto err;
+    }
+
+    ifile2_size = get_file_size(fp2, ifname2);
+    if (0 > ifile2_size) {
+        fprintf(stderr, "ERROR: Invalid file size %ld of file: %s\n",
+            ifile2_size, ifname2);
+        goto err;
+    }
+
+    if (ifile1_size + ifile2_size >= UINT_MAX) {
+        fprintf(stderr, "ERROR: Files too large\n");
+        goto err;
+    }
+
+    /* Allocate memory to the buffer */
+    buf = malloc(ifile1_size);
+    if (NULL == buf || 0 == buf) {
+        fprintf(stderr, "ERROR: Error allocating memory; %s\n", strerror(errno));
+        goto err;
+    }
+
+    fp1 = fopen(ifname1, "rb");
+    fp2 = fopen(ifname2, "rb");
+    fp3 = fopen(tmp_file, "wb");
+
+    if (NULL == fp1 || NULL == fp2 || NULL == fp3) {
+        fprintf(stderr, "ERROR: Couldn't open one of the files : %s or %s or %s %s\n",
+                ifname1, ifname2, tmp_file, strerror(errno));
+       goto err;
+    }
+
+    result_size = fread(buf, 1, ifile1_size, fp1);
+    /* Copy input file to output file */
+    if (result_size != ifile1_size) {
+        fprintf(stderr, "ERROR: File read error; %s\n", strerror(errno));
+        goto err;
+    } else {
+        result_size = fwrite(buf, 1, ifile1_size, fp3);
+        if (result_size != ifile1_size) {
+            fprintf(stderr, "ERROR: File write error; %s\n", strerror(errno));
+            goto err;
+        }
+    }
+
+    FREE(buf);
+    /* Allocate memory to the buffer */
+    buf = malloc(ifile2_size);
+    if (NULL == buf || 0 == buf) {
+        fprintf(stderr, "ERROR: Error allocating memory; %s\n", strerror(errno));
+        goto err;
+    }
+
+    result_size = fread(buf, 1, ifile2_size, fp2);
+    /* Copy input file to output file */
+    if (result_size != ifile2_size) {
+        fprintf(stderr, "ERROR: File read error; %s\n", strerror(errno));
+        goto err;
+    } else {
+        result_size = fwrite(buf, 1, ifile2_size, fp3);
+        if (result_size != ifile2_size) {
+        fprintf(stderr, "ERROR: File write error; %s\n", strerror(errno));
+        goto err;
+        }
+    }
+
+     FCLOSE(fp1);
+     FCLOSE(fp2);
+     FCLOSE(fp3);
+     FREE(buf);
+
+    /* Remove input temp file */
+    if (remove(ifname1)) {
+        fprintf(stderr, "ERROR: Couldn't remove file: %s; %s\n", ifname1,
+                strerror(errno));
+        goto err;
+    }
+
+    /* Rename output temp file to input temp file to be signed again */
+    if (rename(tmp_file, ifname1)) {
+        fprintf(stderr, "ERROR: Couldn't rename file: %s to %s; %s\n", tmp_file,
+                ifname1, strerror(errno));
+        goto err;
+    }
+
+    return E_OK;
+err:
+    FCLOSE(fp1);
+    FCLOSE(fp2);
+    FCLOSE(fp3);
+    FREE(buf);
+    return -E_FAILURE;
+}
+
+/*
+ * @brief      Generate CSF file
+ *
+ * @param[in]   idx        : CSF file has a standard naming csf_image%d.bin
+ *                           idx represents the index of the CSF file and will
+ *                           be appended in the name
+ * @param[out]  csf_file   : The name of the generated CSF file
+ *
+ * @retval     -E_FAILURE  : Failure
+ *              E_OK       : Success
+ */
+static int generate_csf_v1(int idx, char *csf_file)
+{
+    char csf_ifilename[100UL] = {0};
+    char csf_ofilename[100UL] = {0};
+    char sys_cmd[SYS_CMD_LEN] = {0};
+
+    if (0 > (snprintf(csf_ifilename, sizeof(csf_ifilename), "csf_image%d.txt", idx))) {
+        fprintf(stderr, "ERROR: Cannot populate CSF file name.\n");
+        goto err;
+    }
+
+    if (0 > (snprintf(csf_ofilename, sizeof(csf_ifilename), "csf_image%d.bin", idx))) {
+        fprintf(stderr, "ERROR: Cannot populate CSF file name.\n");
+        goto err;
+    }
+
+    if (access(csf_ifilename, F_OK)) {
+        fprintf(stderr, "ERROR: CSF txt file does not exist.\n");
+        goto err;
+    }
+
+#if defined(__linux__)
+    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/linux64/bin/cst ", g_cst_path))) {
+        fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
+        goto err;
+    }
+#elif defined(_WIN32) || defined(_WIN64)
+    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/mingw32/bin/cst.exe ", g_cst_path)) {
+        fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
+        return -E_FAILURE;
+    }
+#else
+    #error Unsupported OS
+#endif
+
+    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), "--i %s --o %s", csf_ifilename, csf_ofilename))) {
+        fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
+        goto err;
+    }
+
+    memcpy(csf_file, csf_ofilename, strlen(csf_ofilename));
+    /* Execute command */
+    printf("Executing command: %s\n", sys_cmd);
+    if(system(sys_cmd) == 0)
+        return E_OK;
+
+err:
+    return -E_FAILURE;
+}
+
+/*
+ * @brief       Search for the first IVT in the input flash.bin image: compute addr, offset,len
+ *              and write them in the CSF file. Then generate CSF binary and
+ *              insert its contents in the flash.bin or append it to the flash.bin
+ *
+ * @param[in]   off         : IVT offset in the flash.bin
+ *              infile_buf  : Input file read into memory
+ *              loop        : iteration number. It will be used in the CSF source
+ *                            file name. E.g csf_file0.txt if loop == 0.
+ *              infile_size : size of the flash.bin given as input for signing
+ *              ofname        : name of the output signed flash image. E.g signed-flash.bin
+ *
+ * @retval      -E_FAILURE  : Failure
+ *               E_OK       : Success
+ *              -ERANGE     : Exit from search loop
+ */
+static int process_ivt_image(unsigned long off, uint8_t *infile_buf,
+                   unsigned long loop, long int infile_size,
+                   char *ofname)
+{
+    char csf_file[100UL] = {0};
+    uint32_t csf_offset = 0x0;
+    ivt_t *ivt;
+    int err = -E_FAILURE;
+
+    g_images[0].valid = true;
+    ivt = (ivt_t *)(infile_buf + off);
+    g_images[0].load_addr = ivt->self_addr;
+    g_images[0].offset = off;
+    g_images[0].size =  ivt->csf_addr - ivt->self_addr;
+    csf_offset = ivt->csf_addr - ivt->self_addr;
+
+    DEBUG("Image[%d] addr 0x%08lx\n",0, g_images[0].load_addr);
+    DEBUG("Image[%d] offset  0x%08lx\n",0, g_images[0].offset);
+    DEBUG("Image[%d] size 0x%08lx\n",0, g_images[0].size);
+
+    err = create_csf_file_v1(g_images, loop, ofname);
+    if (err) {
+        errno = EFAULT;
+        fprintf(stderr, "ERROR: Couldn't not create csf txt file %s\n",
+            strerror(EFAULT));
+        return -E_FAILURE;
+    }
+
+    err = generate_csf_v1(loop, csf_file);
+    if (err) {
+        errno = EFAULT;
+        fprintf(stderr, "ERROR: Couldn't not generate csf bin file %s\n",
+            strerror(EFAULT));
+        return -E_FAILURE;
+    }
+
+    if (infile_size <= csf_offset) {/* concat csf file with original file and exit while loop*/
+        err = concat_files(ofname, csf_file);
+        if (err) {
+            errno = EFAULT;
+            fprintf(stderr, "ERROR: Couldn't not concatenate %s with %s %s\n",
+                ofname, csf_file,
+                strerror(EFAULT));
+            return -E_FAILURE;
+        }
+
+        return -ERANGE;
+    } else {
+        DEBUG("insert CSF at offset %x in file %s\n",
+              csf_offset, ofname);
+        /*insert CSF after  ivt->csf_addr - ivt->self_addr */
+        err = insert_csf(csf_file, ofname,
+                 csf_offset);
+        if (err) {
+            errno = EFAULT;
+            fprintf(stderr, "ERROR: Couldn't insert CSF sequence at offset %x in file %s %s\n",
+                csf_offset, ofname,
+                strerror(EFAULT));
+            return -E_FAILURE;
+        }
+    }
+
+    return err;
+}
+
+/*
+ * @brief       Search for the next IVT in the input flash.bin image: compute
+ *              addr, offset,len and write them in the CSF file.
+ *              Then generate CSF binary and
+ *              insert its contents in the flash.bin or append it to the
+ *              flash.bin The IVT can be found inside a FIT image.
+ *
+ * @param[in]   off         : IVT offset in the flash.bin
+ *              infile_buf  : Input file read into memory
+ *              loop        : iteration number. It will be used in the CSF source
+ *                            file name. E.g csf_file1.txt if loop == 1.
+ *              infile_size : size of the flash.bin given as input for signing
+ *              ofname      : name of the output signed flash image.
+ *                              E.g signed-flash.bin
+ *
+ * @retval      -E_FAILURE  : Failure
+ *               E_OK       : Success
+ *              -ERANGE     : Exit from search loop
+ */
+static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
+                  unsigned long loop, long int infile_size,
+                  char *ofname)
+{
+    fdt_header_t *fit_img = (fdt_header_t *)(infile_buf + off - 0x1000);
+    uint32_t csf_offset = 0x0;
+    char csf_file[100UL] = {0};
+    ivt_t *ivt;
+    int err = -E_FAILURE;
+
+    if (be32_to_cpu(fit_img->magic) == FDT_MAGIC) {
+        g_images[0].valid = true;
+        ivt = (ivt_t *)(infile_buf + off);
+        if (ivt->self_addr < ivt->entry) {
+            fprintf(stderr, "Invalid image. IVT offset must be greater than Image offset\n");
+            return -E_FAILURE;
+        }
+
+        /* In NXP BSP the FIT image has the following structure:
+         *   _____________
+         *  |FDT    (FIT) |
+         *  |IVT    (FIT) |
+         *  |CSF    (FIT) |
+         *  |Images (FIT) |
+         *  |_____________|
+         *
+         *  - g_images[0] contains FDT
+         *  - starting from (g_images + 1)  is the FIT image composed of:
+         *    Image 0 (uboot@1),Image 1 (fdt@1) ,Image 2 (atf@1).
+         *  - (g_images + 1) is populated by parsing the standard FIT image
+         *    represented by FDT plus Images. All the information related to
+         *    FIT is found  in FDT.
+         *    IVT + CSF = FIT_IMAGES_OFFSET
+         *    Images will start from off(IVT) + FIT_IMAGES_OFFSET.
+         */
+        g_images[0].load_addr = ivt->entry;
+        g_images[0].offset = off - 0x1000;
+        g_images[0].size =  ivt->csf_addr - ivt->entry;
+        csf_offset = off + ivt->csf_addr - ivt->self_addr;
+
+        DEBUG("Image[%d] addr 0x%08lx\n",0, g_images[0].load_addr);
+        DEBUG("Image[%d] offset  0x%08lx\n",0, g_images[0].offset);
+        DEBUG("Image[%d] size 0x%08lx\n",0, g_images[0].size);
+
+        /*
+         * g_images + 1 contains all the Images from FIT:
+         * Image 0 (uboot@1),Image 1 (fdt@1) ,Image 2 (atf@1)
+         */
+        err = parse_fdt(fit_img, &g_images[1]);
+        if (err) {
+            errno = EFAULT;
+            fprintf(stderr, "Could not parse FIT image %s\n", strerror(EFAULT));
+            return -E_FAILURE;
+        }
+
+        /* adjusting block load addresses & offsets */
+        for (int idx = 1; idx < NUM_IMGS; idx++) {
+            if (!g_images[idx].valid)
+                continue;
+
+            /*
+             * (g_images + 1) is populated by parsing the standard FIT image
+             * represented by FDT + Images. All the information related to FIT
+             * is found in FDT.
+             * IVT + CSF = FIT_IMAGES_OFFSET
+             * Images will start from off(IVT) + FIT_IMAGES_OFFSET.
+             */
+            if (idx == 1) {
+                g_images[idx].offset = off + FIT_IMAGES_OFFSET;
+            } else {
+                g_images[idx].offset = g_images[idx - 1].offset +
+                               g_images[idx - 1].size;
+            }
+
+            /* If the FIT image number idx has no address set in the FIT
+             * structure,  then its load address equals with the load address of
+             * the previous image plus the size of the previous image.
+             * In other words image idx comes right after image idx - 1.
+             */
+            if (!g_images[idx].load_addr)
+                g_images[idx].load_addr = g_images[idx - 1].load_addr +
+                              g_images[idx - 1].size;
+
+            DEBUG("Image[%d] addr 0x%08lx\n",idx, g_images[idx].load_addr);
+            DEBUG("Image[%d] offset 0x%08lx\n",idx, g_images[idx].offset);
+            DEBUG("Image[%d] size 0x%08lx\n",idx, g_images[idx].size);
+        }
+
+        err = create_csf_file_v1(g_images, loop, ofname);
+        if (err) {
+            errno = EFAULT;
+            fprintf(stderr, "ERROR: Couldn't not create csf txt file %s\n",
+                    strerror(EFAULT));
+            return -E_FAILURE;
+        }
+
+        err = generate_csf_v1(loop, csf_file);
+        if (err) {
+            errno = EFAULT;
+            fprintf(stderr, "ERROR: Couldn't not generate csf bin file %s\n",
+                    strerror(EFAULT));
+            return -E_FAILURE;
+        }
+
+        DEBUG("insert CSF at offset %x in file %s\n", csf_offset,
+              ofname);
+        /*insert CSF after IVT_OFFSET + 0x20 */
+        err = insert_csf(csf_file, ofname, csf_offset);
+        if (err) {
+            errno = EFAULT;
+            fprintf(stderr, "ERROR: Couldn't insert CSF sequence at offset %x in file %s %s\n",
+                csf_offset, ofname, strerror(EFAULT));
+            return -E_FAILURE;
+        }
+    } else {/* there is no magic number. it means we have IVT but no FIT*/
+        err = process_ivt_image(off, infile_buf, loop, infile_size, ofname);
+        if (err) {
+            if (err != -ERANGE) {
+                errno = EFAULT;
+                fprintf(stderr, "ERROR: Could not find IVT at offset %lx %s\n",
+                        off, strerror(EFAULT));
+                return -E_FAILURE;
+            } else
+                return -ERANGE;
+        }
+    }
+    return E_OK;
+}
+
+/*
+ * @brief       Sign image of IVT type v1
+ *
+ * @param[in]   infile_buf  : Input file buffer
+ *              infile_size : Input file size
+ *
+ * @retval      -E_FAILURE  : Failure
+ *              -ENOENT     : Input flash image is not a valid HAB image
+ *              -E_OK       : Success
+ */
+static int sign_image(uint8_t *infile_buf, long int infile_size,
+              char *ifname_full, char *ofname)
+{
+    int pat_len = sizeof(g_ivt_v1) / sizeof(g_ivt_v1[0]);
+    unsigned short order = ASCENDING;
+    unsigned long loop = 0, off = 0, pos = 0;
+    bool is_ivt = true;
+    bool found = false;
+    int err = -E_FAILURE;
+
+    /* Copy file to be signed */
+    if(copy_files(ifname_full, ofname)) {
+        fprintf(stderr, "ERROR: Failed to copy files: %s and %s\n", ifname_full,
+                ofname);
+            goto err_;
+        }
+
+    do {
+        off = search_pattern(infile_buf, g_ivt_v1, infile_size,
+                     pat_len, order, pos, g_ivt_v1_mask, is_ivt);
+        if (off < infile_size) {
+            found = true;
+            memset(g_images, 0, NUM_IMGS * sizeof(g_images[0]));
+            if (!loop) {/* first iteration */
+                err = process_ivt_image(off, infile_buf,
+                                  loop, infile_size,
+                                  ofname);
+                /* CSF was appended to the input image */
+                if (err == -ERANGE)
+                    return E_OK;
+
+                if (err)
+                    goto err_;
+            } else {
+                err = process_fdt_images(off, infile_buf, loop,
+                             infile_size, ofname);
+                /* CSF was appended to the input image */
+                if (err == -ERANGE)
+                    return E_OK;
+
+                if (err)
+                    goto  err_;
+            }
+            pos = off + 4;
+        }
+        loop++;
+    } while (off < infile_size);
+
+    if (!found) {
+        fprintf(stderr, "ERROR: No IVT header found. Input file is not "
+            "a valid HAB image. %s\n", strerror(ENOENT));
+        err = -ENOENT;
+        goto err_;
+    }
+
+    return E_OK;
+err_:
+    /* in case of an error remove the copy of the input file */
+    if (remove(ofname)) {
+        fprintf(stderr, "ERROR: Failed to remove  %s \n", ofname);
+        return -E_FAILURE;
+    }
+
+    return err;
+}
+
+/*
+ * @brief       Prints the usage information for running this application
+ */
+static void print_usage(void)
+{
     int i = 0;
     printf("CST Signer: CST helper tool to auto-sign image.\n"
         "Usage: CST_PATH=<cst-path> ./cst_signer ");
@@ -910,6 +1576,10 @@ int main(int argc, char **argv)
             case 'd':
                 g_debug = 1;
                 break;
+            /* Enable debug FDT */
+            case 'f':
+                g_fdt_debug = 1;
+                break;
             /* Display usage */
             case 'h':
                 print_usage();
@@ -935,30 +1605,36 @@ int main(int argc, char **argv)
     
     ibuf_size = get_file_size(fp_in, ifname_full);
     DEBUG("Input filesize = %ld bytes\n", ibuf_size);
-    
+    /* Input file size should be atleast greater than image offset parameter plus word size */
+    if (ibuf_size < (g_image_offset + 4)) {
+        fprintf(stderr, "ERROR: File size too small: 0x%lx\n", ibuf_size);
+        goto err;
+    }
+
     /* Parse w.r.t type of IVT */
     ivt_header_t *hdr_v1 = (ivt_header_t *)(ibuf + g_image_offset);
     flash_header_v3_t *hdr_v3 = (flash_header_v3_t *)(ibuf + g_image_offset);
-    if (IVT_HEADER_TAG_B0 == hdr_v3->tag) {
+    if (IVT_HEADER_TAG_B0 == hdr_v3->tag || IVT_HEADER_TAG_MSG == hdr_v3->tag) {
         DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n", hdr_v3->tag, hdr_v3->length, hdr_v3->version);
         ret = sign_container(ibuf, ibuf_size, ifname_full, ofname);
-        if (!ret) {
-            goto err;
-        }
     } else if (IVT_HEADER_TAG == hdr_v1->tag) {
         DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n", hdr_v1->tag, hdr_v1->length, hdr_v1->version);
         ret = sign_image(ibuf, ibuf_size, ifname_full, ofname);
-        if (!ret) {
-            goto err;
-        }
     } else {
-        fprintf(stderr, "ERROR: Invalid image header\n");
+        fprintf(stderr, "ERROR: Invalid IVT tag: 0x%x\n", (ibuf + g_image_offset)[3]);
         goto err;
     }
-    
+
+    if (!ret) {
+        DEBUG("%s was successfully signed. %s was generated.\n", ifname_full, ofname);
+        FCLOSE(fp_in);
+        FREE(ibuf);
+        return E_OK;
+    }
+
     return EXIT_SUCCESS;
 err:
     FCLOSE(fp_in);
     FREE(ibuf);
-    return EXIT_FAILURE;
+    return -E_FAILURE;
 }
