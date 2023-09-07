@@ -186,6 +186,45 @@ static char *g_cst_path = NULL;
 unsigned char g_ivt_v1_mask[] = {0xFF,0xFF,0xFF,0x00};
 unsigned char g_ivt_v1[] = {0xD1,0x00,0x20,0x41};
 
+
+unsigned char g_ivt_v3_mask[] = {0xff, 0x00, 0x00, 0xff};
+/* array contains tag_b0, tag_msg*/
+unsigned char g_ivt_v3_ahab_array[2][4] = {{0x00 ,0x00, 0x00, 0x87},/*tag_b0*/
+                                           {0x00 ,0x00, 0x00, 0x89}};/*tag_msg*/
+
+#define AHAB_1K_ALIGN 0x400
+#define HAB_IVT_SEARCH_STEP 0x4
+
+/*
+ * header tag check happens at every 0x400 offset inside the image as per NXP
+ * BSP boot image architecture
+ */
+#define AHAB_IVT_SEARCH_STEP 0x400
+
+#define IS_AHAB_IMAGE(buf, size, ahab_array, ivt_v3_mask, off)                      \
+({                                                                                  \
+    int num_cntr_tags = sizeof(ahab_array)/sizeof(ahab_array[0]);                   \
+    unsigned char (*p)[sizeof(ahab_array[0])] = ahab_array;                         \
+                                                                                    \
+    do {                                                                            \
+            off = search_pattern(buf, *p++, size, sizeof(ahab_array[0]),            \
+                                 ASCENDING, g_image_offset, ivt_v3_mask,            \
+                                 AHAB_IVT_SEARCH_STEP);                             \
+            if (off < size) {                                                       \
+                break;                                                              \
+            }                                                                       \
+    }  while(--num_cntr_tags);                                                      \
+    (size > off);                                                                   \
+})                                                                                  \
+
+#define IS_HAB_IMAGE(buf, size, ivt_v1, ivt_v1_mask, off)                         \
+({                                                                                \
+     off =  search_pattern(buf, ivt_v1, size, sizeof(ivt_v1) / sizeof(ivt_v1[0]), \
+                           ASCENDING, g_image_offset, ivt_v1_mask,                \
+                           HAB_IVT_SEARCH_STEP);                                  \
+     (size > off);                                                                \
+})                                                                                \
+
 /* Function prototypes */
 int copy_files(char *ifname, char *ofname);
 long int get_file_size(FILE *fp, char *input_file);

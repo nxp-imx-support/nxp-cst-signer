@@ -25,23 +25,24 @@ image_block_t g_images[NUM_IMGS];
 /*
  * @brief      Search for pattern in buffer
  *
- * @param[in]   buff       : Input buffer to search into
+ * @param[in]   buff     : Input buffer to search into
  * @param[in]   pattern  : Input pattern
+ * @param[in]   buff_len : Input buffer length
  * @param[in]   patt_len : Input pattern length
  * @param[in]   pos      : Position where to start the search from
  * @param[in]   order    : Search order from @pos: ascending or descending
  * @param[in]   mask     : Mask bytes in @pattern
- * @param[in]   is_ivt   : Search pattern. If is_ivt is true this will determine
- *                           the search to be 4 bytes step.
+ * @param[in]   step     : Use step bytes to increment from position for the next
+ *                         search iteration.
  *
  * @retval      Return offset in buffer for the pattern. If pattern not found,
  *                 return buff_len + 1.
  */
 unsigned long search_pattern(const unsigned char *buff, unsigned char *pattern,
                  size_t buff_len, size_t patt_len, unsigned short order,
-                             unsigned long pos, unsigned char *mask, bool is_ivt)
+                             unsigned long pos, unsigned char *mask, unsigned long step)
 {
-    unsigned long off, step;
+    unsigned long off;
     short found = 0;
     char temp[patt_len];
 
@@ -50,12 +51,6 @@ unsigned long search_pattern(const unsigned char *buff, unsigned char *pattern,
     if (mask) {
         for (int j = 0; j < patt_len; j++)
             pattern[j] = pattern[j] & mask[j];
-    }
-
-    if (!is_ivt) {
-        step = 1;
-    } else {
-        step = 4;
     }
 
     /*search in ascending order */
@@ -1155,19 +1150,28 @@ static int process_ivt_image(unsigned long off, uint8_t *infile_buf,
 {
     char csf_file[100UL] = {0};
     uint32_t csf_offset = 0x0;
-    ivt_t *ivt;
+    ivt_t *ivt = NULL;
     int err = -E_FAILURE;
 
+    /* Compare the entry address with self address. For kernel images
+     * IVT is placed at the end of the image file. In this case the load
+     * address is the entry address, offset will be 0x0, length is self_addr - entry */
     g_images[0].valid = true;
     ivt = (ivt_t *)(infile_buf + off);
-    g_images[0].load_addr = ivt->self_addr;
-    g_images[0].offset = off;
-    g_images[0].size =  ivt->csf_addr - ivt->self_addr;
-    csf_offset = ivt->csf_addr - ivt->self_addr;
+
+    g_images[0].load_addr = (ivt->self_addr > ivt->entry) ?
+                             ivt->entry : ivt->self_addr;
+    g_images[0].offset = (ivt->self_addr > ivt->entry) ? 0x0 : off;
+    g_images[0].size =  (ivt->self_addr > ivt->entry) ?
+                        (ivt->csf_addr - ivt->entry) :
+                        (ivt->csf_addr - ivt->self_addr);
+    csf_offset = (ivt->self_addr > ivt->entry) ? (ivt->csf_addr - ivt->entry) :
+                 (ivt->csf_addr - ivt->self_addr);
 
     DEBUG("Image[%d] addr 0x%08lx\n",0, g_images[0].load_addr);
     DEBUG("Image[%d] offset  0x%08lx\n",0, g_images[0].offset);
     DEBUG("Image[%d] size 0x%08lx\n",0, g_images[0].size);
+    DEBUG("Image[%d] csf_offset 0x%08x\n",0, csf_offset);
 
     err = create_csf_file_v1(g_images, loop, ofname);
     if (err) {
@@ -1186,6 +1190,8 @@ static int process_ivt_image(unsigned long off, uint8_t *infile_buf,
     }
 
     if (infile_size <= csf_offset) {/* concat csf file with original file and exit while loop*/
+        DEBUG("insert CSF at the end of file, at offset  %x in file %s\n",
+              csf_offset, ofname);
         err = concat_files(ofname, csf_file);
         if (err) {
             errno = EFAULT;
@@ -1363,7 +1369,7 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
 }
 
 /*
- * @brief       Sign image of IVT type v1
+ * @brief       Sign HAB image
  *
  * @param[in]   infile_buf  : Input file buffer
  *              infile_size : Input file size
@@ -1372,13 +1378,12 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
  *              -ENOENT     : Input flash image is not a valid HAB image
  *              -E_OK       : Success
  */
-static int sign_image(uint8_t *infile_buf, long int infile_size,
+static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
               char *ifname_full, char *ofname)
 {
     int pat_len = sizeof(g_ivt_v1) / sizeof(g_ivt_v1[0]);
     unsigned short order = ASCENDING;
     unsigned long loop = 0, off = 0, pos = 0;
-    bool is_ivt = true;
     bool found = false;
     int err = -E_FAILURE;
 
@@ -1391,7 +1396,7 @@ static int sign_image(uint8_t *infile_buf, long int infile_size,
 
     do {
         off = search_pattern(infile_buf, g_ivt_v1, infile_size,
-                     pat_len, order, pos, g_ivt_v1_mask, is_ivt);
+                     pat_len, order, pos, g_ivt_v1_mask, HAB_IVT_SEARCH_STEP);
         if (off < infile_size) {
             found = true;
             memset(g_images, 0, NUM_IMGS * sizeof(g_images[0]));
@@ -1611,15 +1616,19 @@ int main(int argc, char **argv)
         goto err;
     }
 
+    unsigned long off = 0;
     /* Parse w.r.t type of IVT */
-    ivt_header_t *hdr_v1 = (ivt_header_t *)(ibuf + g_image_offset);
-    flash_header_v3_t *hdr_v3 = (flash_header_v3_t *)(ibuf + g_image_offset);
-    if (IVT_HEADER_TAG_B0 == hdr_v3->tag || IVT_HEADER_TAG_MSG == hdr_v3->tag) {
-        DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n", hdr_v3->tag, hdr_v3->length, hdr_v3->version);
+    if (IS_AHAB_IMAGE(ibuf, ibuf_size, g_ivt_v3_ahab_array, g_ivt_v3_mask, off)) {
+        flash_header_v3_t *hdr_v3 = (flash_header_v3_t *)(ibuf + off);
+
+        DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n",
+              hdr_v3->tag, hdr_v3->length, hdr_v3->version);
         ret = sign_container(ibuf, ibuf_size, ifname_full, ofname);
-    } else if (IVT_HEADER_TAG == hdr_v1->tag) {
-        DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n", hdr_v1->tag, hdr_v1->length, hdr_v1->version);
-        ret = sign_image(ibuf, ibuf_size, ifname_full, ofname);
+    } else if (IS_HAB_IMAGE(ibuf, ibuf_size, g_ivt_v1, g_ivt_v1_mask, off)) {
+        ivt_t *ivt = (ivt_t *)(ibuf + off);
+        DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n",
+              ivt->ivt_hdr.tag, ivt->ivt_hdr.length, ivt->ivt_hdr.version);
+        ret = sign_hab_image(ibuf, ibuf_size, ifname_full, ofname);
     } else {
         fprintf(stderr, "ERROR: Invalid IVT tag: 0x%x\n", (ibuf + g_image_offset)[3]);
         goto err;
@@ -1630,7 +1639,8 @@ int main(int argc, char **argv)
         FCLOSE(fp_in);
         FREE(ibuf);
         return E_OK;
-    }
+    } else
+        goto err;
 
     return EXIT_SUCCESS;
 err:
