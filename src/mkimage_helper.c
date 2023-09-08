@@ -1,10 +1,8 @@
 /*
- * Copyright 2022-23 NXP
- *
+ * Copyright 2022-2023 NXP
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Description: This file inherits code from NXP delivered imx-mkimage tool.
- *
  */
 
 #include "mkimage_helper.h"

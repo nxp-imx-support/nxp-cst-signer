@@ -3,8 +3,8 @@
  * Copyright (C) 2006 David Gibson, IBM Corporation.
  * Copyright 2012 Kim Phillips, Freescale Semiconductor.
  * Copyright 2022 NXP
- *
- * SPDX-License-Identifier:     GPL-2.0+
+ * 
+ * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
 #ifndef FDT_H
