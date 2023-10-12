@@ -4,7 +4,7 @@
  *
  */
 
-#include "cfg_parser.h"
+#include <cfg_parser.h>
 
 #define DELIMITER       "="
 

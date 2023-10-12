@@ -4,11 +4,13 @@
  *
  */
 
-#include "cst_signer.h"
-#include "cfg_parser.h"
-#include "mkimage_helper.h"
-#include "fdt.h"
 #include <limits.h>
+
+#include <cst_signer.h>
+#include <cfg_parser.h>
+#include <mkimage_helper.h>
+#include <fdt.h>
+
 #define RSIZE   256
 
 uint32_t g_image_offset = 0;
