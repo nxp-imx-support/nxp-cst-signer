@@ -128,6 +128,12 @@ typedef struct {
     uint32_t reserved2;
 } __attribute__((packed)) ivt_t;
 
+typedef struct {
+    uint32_t start;
+    uint32_t length;
+    uint32_t plugin_flag;
+} __attribute__((packed)) boot_data_t;
+
 
 typedef struct {
     uint8_t version;
@@ -181,7 +187,7 @@ static char *g_csf_cfgfilename = NULL;
 extern uint32_t g_image_offset;
 static char *g_cst_path = NULL;
 
-unsigned char g_ivt_v1_mask[] = {0xFF,0xFF,0xFF,0x00};
+unsigned char g_ivt_v1_mask[] = {0xFF,0xFF,0xFF,0xF0};
 unsigned char g_ivt_v1[] = {0xD1,0x00,0x20,0x41};
 
 
@@ -189,30 +195,74 @@ unsigned char g_ivt_v3_mask[] = {0xff, 0x00, 0x00, 0xff};
 /* array contains tag_b0, tag_msg*/
 unsigned char g_ivt_v3_ahab_array[2][4] = {{0x00 ,0x00, 0x00, 0x87},/*tag_b0*/
                                            {0x00 ,0x00, 0x00, 0x89}};/*tag_msg*/
-
+#define TAG_B0 0x87
+#define TAG_MSG 0x89
+#define TAG_SIG_BLK 0x90
 #define AHAB_1K_ALIGN 0x400
-#define HAB_IVT_SEARCH_STEP 0x4
 
 /*
  * header tag check happens at every 0x400 offset inside the image as per NXP
  * BSP boot image architecture
  */
+#define HAB_IVT_SEARCH_STEP  0x400
 #define AHAB_IVT_SEARCH_STEP 0x400
+/*
+ * Length is the size of the container header, up through, and
+ * including the signature block. A valid image must have the length at least this
+ * value
+ */
+#define AHAB_CONTAINER_MIN_LENGTH (sizeof(((flash_header_v3_t *)(0))->version) + \
+	sizeof(((flash_header_v3_t *)(0))->length) + \
+	sizeof(((flash_header_v3_t *)(0))->tag) + \
+	sizeof(((flash_header_v3_t *)(0))->flags) + \
+	sizeof(((flash_header_v3_t *)(0))->sw_version) + \
+	sizeof(((flash_header_v3_t *)(0))->fuse_version)  + \
+	sizeof(((flash_header_v3_t *)(0))->num_images)  + \
+	sizeof(((flash_header_v3_t *)(0))->sig_blk_offset)  + \
+	sizeof(((flash_header_v3_t *)(0))->reserved)  + \
+    sizeof(boot_img_t))
+
+/* Message Container length should be exactly 0x48 */
+#define AHAB_MSG_CONTAINER_LENGTH 0x48
+
+#define HDMI_IMAGE_FLAG_MASK                (0x0002)    /* bit 1 is HDMI image indicator   */
 
 #define IS_AHAB_IMAGE(buf, size, ahab_array, ivt_v3_mask, off)                      \
 ({                                                                                  \
     int num_cntr_tags = sizeof(ahab_array)/sizeof(ahab_array[0]);                   \
     unsigned char (*p)[sizeof(ahab_array[0])] = ahab_array;                         \
+    bool is_valid = false;                                                          \
                                                                                     \
     do {                                                                            \
             off = search_pattern(buf, *p++, size, sizeof(ahab_array[0]),            \
                                  ASCENDING, g_image_offset, ivt_v3_mask,            \
                                  AHAB_IVT_SEARCH_STEP);                             \
             if (off < size) {                                                       \
+                flash_header_v3_t *hdr_v3 = (flash_header_v3_t *)(buf + off);       \
+                sig_blk_hdr_t *sig_blk_hdr =                                        \
+                            (sig_blk_hdr_t *)(buf + off + hdr_v3->sig_blk_offset);  \
+                if (hdr_v3->tag == TAG_B0) {                                        \
+                /* Strengthen AHAB header search with following:                    \
+                 *  - Minimum length of container                                   \
+                 *  - Reserved fields                                               \
+                 *  - Signature block header tag and version                        \
+                 *  - Version                                                       \
+                 */                                                                 \
+                    if (hdr_v3->length >= AHAB_CONTAINER_MIN_LENGTH                 \
+                        && (!hdr_v3->reserved)                                      \
+                        && sig_blk_hdr->tag == TAG_SIG_BLK                          \
+                        && (!sig_blk_hdr->version)                                  \
+                        && (!sig_blk_hdr->reserved))                                \
+                        is_valid = true;                                            \
+                } else  if (hdr_v3->tag == TAG_MSG) {                               \
+                            if (hdr_v3->length == AHAB_MSG_CONTAINER_LENGTH)        \
+                                is_valid = true;                                    \
+                }                                                                   \
+                                                                                    \
                 break;                                                              \
             }                                                                       \
     }  while(--num_cntr_tags);                                                      \
-    (size > off);                                                                   \
+    (size > off && is_valid);                                                       \
 })                                                                                  \
 
 #define IS_HAB_IMAGE(buf, size, ivt_v1, ivt_v1_mask, off)                         \
@@ -220,7 +270,19 @@ unsigned char g_ivt_v3_ahab_array[2][4] = {{0x00 ,0x00, 0x00, 0x87},/*tag_b0*/
      off =  search_pattern(buf, ivt_v1, size, sizeof(ivt_v1) / sizeof(ivt_v1[0]), \
                            ASCENDING, g_image_offset, ivt_v1_mask,                \
                            HAB_IVT_SEARCH_STEP);                                  \
-     (size > off);                                                                \
+     bool is_valid = false;                                                       \
+     ivt_t *ivt = (ivt_t *)(buf + off);                                           \
+                                                                                  \
+	 if (off < size) {															  \
+         /* Strengthen HAB header search with following:                          \
+          * - CSF address is always greater than ENTRY and SELF address           \
+          * - Reserved fields                                                     \
+          */                                                                      \
+         if ((ivt->csf_addr > ivt->entry) && (ivt->csf_addr > ivt->self_addr) &&  \
+             (!ivt->reserved1) && (!ivt->reserved2))    \
+                 is_valid = true;                                                 \
+     }                                                                            \
+     (size > off && is_valid);                                                    \
 })                                                                                \
 
 /* Function prototypes */
