@@ -13,7 +13,8 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
-#include "fdt.h"
+
+#include <fdt.h>
 
 
 static struct fdt_errtabent fdt_errtable[] = {

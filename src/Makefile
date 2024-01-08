@@ -4,23 +4,33 @@
 #    SPDX-License-Identifier: GPL-2.0-or-later
 #==============================================================================
 
-CC = gcc
+CC       ?= gcc
+CFLAGS   ?= -g -Wall -Werror
+CPPFLAGS ?=
+LDFLAGS  ?=
+INCLUDES  = -I../inc/
 
-COPTS = -g -Wall -Werror
-CFLAGS = -I../inc/.
+PREFIX   ?= /usr/local
+BINDIR   ?= $(PREFIX)/bin
+DATADIR  ?= $(PREFIX)/share
 
-DEPS = cst_signer.h cfg_parser.h mkimage_helper.h
-SRCS = cst_signer.c cfg_parser.c mkimage_helper.c fdt.o
+SRCS = cst_signer.c cfg_parser.c mkimage_helper.c fdt.c
 
-.PHONY: all clean
+all: cst-signer
 
-all: cst_signer fdt.o
+%.o : %.c
+	$(CC) -c $(INCLUDES) $(CFLAGS) $(LDFLAGS) $(CPPFLAGS) $< -o $@
 
-fdt.o: fdt.c
-	$(CC) -c -w -o $@ $< $(CFLAGS)
+cst-signer: $(SRCS:.c=.o)
+	$(CC) $(INCLUDES) $(CFLAGS) $(LDFLAGS) $(CPPFLAGS) -o $@ $(SRCS:.c=.o)
 
-cst_signer: cst_signer.c fdt.o
-	$(CC) $(COPTS) $(CFLAGS) -o $@ $(SRCS)
+install: cst-signer
+	install -D -m 0755 cst-signer $(DESTDIR)/$(BINDIR)/cst-signer
+	install -D -m 0755 -t $(DESTDIR)$(DATADIR)/doc/cst-signer \
+            ../csf_ahab.cfg.sample \
+            ../csf_hab4.cfg.sample
 
 clean:
-	rm -rf cst_signer fdt.o
+	rm -rf cst-signer *.o
+
+.PHONY: all install clean

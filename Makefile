@@ -4,13 +4,13 @@
 #    SPDX-License-Identifier: GPL-2.0-or-later
 #==============================================================================
 
-SRC_DIR := src
-
-.PHONY: all clean
-
 all:
-	@$(MAKE) -C $(SRC_DIR)/
-	@mv $(SRC_DIR)/cst_signer .
+	@$(MAKE) -C src
+
+install:
+	@$(MAKE) -C src install
 
 clean:
-	@rm -rf cst_signer src/fdt.o
+	@$(MAKE) -C src clean
+
+.PHONY: all install clean
