@@ -1,5 +1,5 @@
 #==============================================================================
-#    Copyright 2022-2023 NXP
+#    Copyright 2022-2024 NXP
 #
 #    SPDX-License-Identifier: GPL-2.0-or-later
 #==============================================================================
@@ -10,7 +10,9 @@ SRC_DIR := src
 
 all:
 	@$(MAKE) -C $(SRC_DIR)/
-	@mv $(SRC_DIR)/cst_signer .
+
+install:
+	@$(MAKE) -C src install
 
 clean:
-	@rm -rf cst_signer src/fdt.o
+	@$(MAKE) -C src clean

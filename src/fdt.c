@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 NXP
+ * Copyright 2022, 2024 NXP
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * Description: This file inherits code from NXP delivered imx-mkimage tool.
@@ -13,8 +13,8 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
-#include "fdt.h"
 
+#include <fdt.h>
 
 static struct fdt_errtabent fdt_errtable[] = {
     FDT_ERRTABENT(FDT_ERR_NOTFOUND),
@@ -858,16 +858,20 @@ int parse_fdt(fdt_header_t *fit, image_block_t *images)
                 printf("%s Image %u (%s)\n", p, count++,
                        fit_get_name(fit, noffset, NULL));
             }
-
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
             ret = fit_image_get_data_and_size(fit, noffset, &data,
                               &images->size);
+#pragma GCC diagnostic pop
             if (g_fdt_debug) {
                 if(ret)
                     printf("Could not get image size\n");
             }
-
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
             ret = fit_image_get_load(fit, noffset,
                          &images->load_addr);
+#pragma GCC diagnostic pop
             if (g_fdt_debug) {
                 if(ret)
                     printf("Could not get image address\n");

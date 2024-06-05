@@ -1,10 +1,10 @@
 /*
- * Copyright 2021-2022 NXP
+ * Copyright 2021-2022, 2024 NXP
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  */
 
-#include "cfg_parser.h"
+#include <cfg_parser.h>
 
 #define DELIMITER       "="
 

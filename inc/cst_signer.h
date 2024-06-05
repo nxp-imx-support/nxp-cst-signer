@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 NXP
+ * Copyright 2022-2024 NXP
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
@@ -26,8 +26,8 @@ const char* const short_opt = "hfdi:o:c:";
 const struct option long_opt[] =
 {
     {"image", required_argument,  0, 'i'},
-    {"offset", required_argument,  0, 'o'},
     {"cfg-file", required_argument,  0, 'c'},
+    {"offset", required_argument,  0, 'o'},
     {"debug", no_argument,  0, 'd'},
     {"fdt-debug", no_argument,  0, 'f'},
     {"help", no_argument, 0, 'h'},
@@ -38,8 +38,8 @@ const struct option long_opt[] =
 const char* desc_opt[] =
 {
     "Input image to be signed",
+    "Input config file to prepare CSF (See csf_ahab.cfg.sample/csf_hab.cfg.sample for details)",
     "(Optional) Offset to the start of image",
-    "CSF configuration file",
     "(Optional) Enable debug information",
     "(Optional) FDT debug information",
     "This text",
@@ -234,33 +234,33 @@ unsigned char g_ivt_v3_ahab_array[2][4] = {{0x00 ,0x00, 0x00, 0x87},/*tag_b0*/
     bool is_valid = false;                                                          \
                                                                                     \
     do {                                                                            \
-            off = search_pattern(buf, *p++, size, sizeof(ahab_array[0]),            \
-                                 ASCENDING, g_image_offset, ivt_v3_mask,            \
-                                 AHAB_IVT_SEARCH_STEP);                             \
-            if (off < size) {                                                       \
-                flash_header_v3_t *hdr_v3 = (flash_header_v3_t *)(buf + off);       \
-                sig_blk_hdr_t *sig_blk_hdr =                                        \
-                            (sig_blk_hdr_t *)(buf + off + hdr_v3->sig_blk_offset);  \
-                if (hdr_v3->tag == TAG_B0) {                                        \
-                /* Strengthen AHAB header search with following:                    \
-                 *  - Minimum length of container                                   \
-                 *  - Reserved fields                                               \
-                 *  - Signature block header tag and version                        \
-                 *  - Version                                                       \
-                 */                                                                 \
-                    if (hdr_v3->length >= AHAB_CONTAINER_MIN_LENGTH                 \
-                        && (!hdr_v3->reserved)                                      \
-                        && sig_blk_hdr->tag == TAG_SIG_BLK                          \
-                        && (!sig_blk_hdr->version)                                  \
-                        && (!sig_blk_hdr->reserved))                                \
-                        is_valid = true;                                            \
-                } else  if (hdr_v3->tag == TAG_MSG) {                               \
-                            if (hdr_v3->length == AHAB_MSG_CONTAINER_LENGTH)        \
-                                is_valid = true;                                    \
-                }                                                                   \
-                                                                                    \
-                break;                                                              \
+        off = search_pattern(buf, *p++, size, sizeof(ahab_array[0]),                \
+                             ASCENDING, g_image_offset, ivt_v3_mask,                \
+                             AHAB_IVT_SEARCH_STEP);                                 \
+        if (off < size) {                                                           \
+            flash_header_v3_t *hdr_v3 = (flash_header_v3_t *)(buf + off);           \
+            sig_blk_hdr_t *sig_blk_hdr =                                            \
+                        (sig_blk_hdr_t *)(buf + off + hdr_v3->sig_blk_offset);      \
+            if (hdr_v3->tag == TAG_B0) {                                            \
+            /* Strengthen AHAB header search with following:                        \
+             *  - Minimum length of container                                       \
+             *  - Reserved fields                                                   \
+             *  - Signature block header tag and version                            \
+             *  - Version                                                           \
+             */                                                                     \
+                if (hdr_v3->length >= AHAB_CONTAINER_MIN_LENGTH                     \
+                    && (!hdr_v3->reserved)                                          \
+                    && sig_blk_hdr->tag == TAG_SIG_BLK                              \
+                    && (!sig_blk_hdr->version)                                      \
+                    && (!sig_blk_hdr->reserved))                                    \
+                    is_valid = true;                                                \
+            } else  if (hdr_v3->tag == TAG_MSG) {                                   \
+                if (hdr_v3->length == AHAB_MSG_CONTAINER_LENGTH)                    \
+                    is_valid = true;                                                \
             }                                                                       \
+                                                                                    \
+            break;                                                                  \
+        }                                                                           \
     }  while(--num_cntr_tags);                                                      \
     (size > off && is_valid);                                                       \
 })                                                                                  \
@@ -273,14 +273,14 @@ unsigned char g_ivt_v3_ahab_array[2][4] = {{0x00 ,0x00, 0x00, 0x87},/*tag_b0*/
      bool is_valid = false;                                                       \
      ivt_t *ivt = (ivt_t *)(buf + off);                                           \
                                                                                   \
-	 if (off < size) {															  \
+     if (off < size) {                                                            \
          /* Strengthen HAB header search with following:                          \
           * - CSF address is always greater than ENTRY and SELF address           \
           * - Reserved fields                                                     \
           */                                                                      \
          if ((ivt->csf_addr > ivt->entry) && (ivt->csf_addr > ivt->self_addr) &&  \
-             (!ivt->reserved1) && (!ivt->reserved2))    \
-                 is_valid = true;                                                 \
+             (!ivt->reserved1) && (!ivt->reserved2))                              \
+             is_valid = true;                                                     \
      }                                                                            \
      (size > off && is_valid);                                                    \
 })                                                                                \

@@ -1,14 +1,16 @@
 /*
- * Copyright 2022-2023 NXP
+ * Copyright 2022-2024 NXP
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  */
 
-#include "cst_signer.h"
-#include "cfg_parser.h"
-#include "mkimage_helper.h"
-#include "fdt.h"
 #include <limits.h>
+
+#include <cst_signer.h>
+#include <cfg_parser.h>
+#include <mkimage_helper.h>
+#include <fdt.h>
+
 #define RSIZE   256
 
 uint32_t g_image_offset = 0;
@@ -1407,15 +1409,15 @@ static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
 {
     int pat_len = sizeof(g_ivt_v1) / sizeof(g_ivt_v1[0]);
     unsigned short order = ASCENDING;
-    unsigned long loop = 0, off = 0, pos = 0;
+    unsigned long loop = 0, off = 0, pos = g_image_offset;
     bool found = false;
     int err = -E_FAILURE;
 
     /* Copy file to be signed */
     if(copy_files(ifname_full, ofname)) {
         fprintf(stderr, "ERROR: Failed to copy files: %s and %s\n", ifname_full, ofname);
-            goto err_;
-        }
+        goto err_;
+    }
 
     do {
         off = search_pattern(infile_buf, g_ivt_v1, infile_size,
@@ -1646,12 +1648,14 @@ int main(int argc, char **argv)
     unsigned long off = 0;
     /* Parse w.r.t type of IVT */
     if (IS_AHAB_IMAGE(ibuf, ibuf_size, g_ivt_v3_ahab_array, g_ivt_v3_mask, off)) {
+        g_image_offset += off;
         flash_header_v3_t *hdr_v3 = (flash_header_v3_t *)(ibuf + off);
 
         DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n",
               hdr_v3->tag, hdr_v3->length, hdr_v3->version);
         ret = sign_container(ibuf, ibuf_size, ifname_full, ofname);
     } else if (IS_HAB_IMAGE(ibuf, ibuf_size, g_ivt_v1, g_ivt_v1_mask, off)) {
+        g_image_offset += off;
         ivt_t *ivt = (ivt_t *)(ibuf + off);
         DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n",
               ivt->ivt_hdr.tag, ivt->ivt_hdr.length, ivt->ivt_hdr.version);
