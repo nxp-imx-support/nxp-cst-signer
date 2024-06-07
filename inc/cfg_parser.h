@@ -1,6 +1,6 @@
 /*
- * Copyright 2021-2022 NXP
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright 2021-2022, 2024 NXP
+ * SPDX-License-Identifier: GPL-2.0-only
  */
 
 #ifndef CST_SIGNER_H
