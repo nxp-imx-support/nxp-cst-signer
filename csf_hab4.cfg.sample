@@ -13,6 +13,7 @@ csfk_file=CSF1_1_sha256_2048_65537_v3_usr_crt.pem
 #Unlock
 unlock_engine=
 unlock_features=
+unlock_uid=
 #Install Key
 img_verification_index=0
 img_target_index=2
