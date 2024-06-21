@@ -9,6 +9,6 @@ License File:                LICENSE.txt
 Type of content:             Source code
 Description and comments:    Signing automation tool using CST
 Release Location:            https://github.com/nxp-imx-support/nxp-cst-signer/
-Origin:                      NXP
+Origin:                      NXP (GPL-2.0-only)
 
 --------------------------------------------

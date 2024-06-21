@@ -2,7 +2,7 @@
  * libfdt - Flat Device Tree manipulation
  * Copyright (C) 2006 David Gibson, IBM Corporation.
  * Copyright 2012 Kim Phillips, Freescale Semiconductor.
- * Copyright 2022, 2024 NXP
+ * Copyright 2022-2024 NXP
  * 
  * SPDX-License-Identifier: GPL-2.0-only
  */
