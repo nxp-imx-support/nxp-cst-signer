@@ -265,10 +265,25 @@ unsigned char g_ivt_v3_ahab_array[2][4] = {{0x00 ,0x00, 0x00, 0x87},/*tag_b0*/
     (size > off && is_valid);                                                       \
 })                                                                                  \
 
-#define IS_HAB_IMAGE(buf, size, ivt_v1, ivt_v1_mask, off)                         \
+#define IS_FIT_IMAGE(buf, off)                                                    \
+({                                                                                \
+     bool is_valid = false;                                                       \
+     if (off >= 0x1000) {                                                          \
+         fdt_header_t *fit_img = (fdt_header_t *)(buf + off - 0x1000);            \
+         ivt_t *ivt = (ivt_t *)(buf + off);                                       \
+                                                                                  \
+         if ((be32_to_cpu(fit_img->magic) == FDT_MAGIC) &&                        \
+             (ivt->self_addr >= ivt->entry)) {                                    \
+             is_valid = true;                                                     \
+         }                                                                        \
+     }                                                                            \
+     (is_valid);                                                                  \
+ })                                                                               \
+
+#define IS_HAB_IMAGE(buf, size, ivt_v1, ivt_v1_mask, off, pos)                    \
 ({                                                                                \
      off =  search_pattern(buf, ivt_v1, size, sizeof(ivt_v1) / sizeof(ivt_v1[0]), \
-                           ASCENDING, g_image_offset, ivt_v1_mask,                \
+                           ASCENDING, pos, ivt_v1_mask,                \
                            HAB_IVT_SEARCH_STEP);                                  \
      bool is_valid = false;                                                       \
      ivt_t *ivt = (ivt_t *)(buf + off);                                           \

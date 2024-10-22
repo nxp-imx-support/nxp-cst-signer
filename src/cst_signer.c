@@ -14,6 +14,7 @@
 #define RSIZE   256
 
 uint32_t g_image_offset = 0;
+unsigned long g_ivt_off_cve = 0x0;
 
 typedef struct {
     int cntr_num;
@@ -1168,6 +1169,13 @@ static int process_ivt_image(unsigned long off, uint8_t *infile_buf,
                         : (ivt->csf_addr - ivt->self_addr);
     csf_offset =  (ivt->csf_addr - ivt->self_addr) + off;
 
+    /* if an IVT is found inside the image which and is not the IVT CVE,
+     * then it's an invalid IVT. A valid IVT will be appended to the image
+     * (most likely kernel image)
+     * Anything in the middle is not valid. */
+    if (off != g_ivt_off_cve && csf_offset < infile_size) {
+        return -EAGAIN;
+    }
 
     /* Check if the image is a HDMI image */
     if (ivt->boot_data) {
@@ -1250,17 +1258,12 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
     fdt_header_t *fit_img = (fdt_header_t *)(infile_buf + off - 0x1000);
     uint32_t csf_offset = 0x0;
     char csf_file[100UL] = {0};
-    unsigned long ivt_off_cve = 0x0;
     ivt_t *ivt;
     int err = -E_FAILURE;
 
-    if (be32_to_cpu(fit_img->magic) == FDT_MAGIC) {
+    if (IS_FIT_IMAGE(infile_buf, off)) {
         g_images[0].valid = true;
         ivt = (ivt_t *)(infile_buf + off);
-        if (ivt->self_addr < ivt->entry) {
-            fprintf(stderr, "Invalid image. IVT offset must be greater than Image offset\n");
-            return -E_FAILURE;
-        }
 
         /* In NXP BSP the FIT image has the following structure:
          *   _____________
@@ -1312,7 +1315,7 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
              * Images will start from off(IVT) + FIT_IMAGES_OFFSET.
              */
             if (idx == 1) {
-                ivt_off_cve = search_pattern(infile_buf, g_ivt_v1, infile_size,
+                g_ivt_off_cve = search_pattern(infile_buf, g_ivt_v1, infile_size,
                                 sizeof(g_ivt_v1) / sizeof(g_ivt_v1[0]), ASCENDING,
                                 off + HAB_IVT_SEARCH_STEP,
                                 g_ivt_v1_mask, HAB_IVT_SEARCH_STEP);
@@ -1329,12 +1332,12 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
                  * This requires a search for the new IVT - (uboot@1) - in
                  * order to determine the offset of  Image 0 (uboot@1).
                  * In case the vulnerability is implemented the offset of
-                 * Image 0 (uboot@1) equals to ivt_off_cve + FIT_IMAGES_OFFSET
+                 * Image 0 (uboot@1) equals to g_ivt_off_cve + FIT_IMAGES_OFFSET
                  * Otherwise the offset is off (first IVT offset + FIT_IMAGES_OFFSET)
                  */
-                if (ivt_off_cve < infile_size) {
-                    DEBUG("Found uboot IVT offset due to CVE fix%lx\n", ivt_off_cve);
-                    g_images[idx].offset = ivt_off_cve + FIT_IMAGES_OFFSET;
+                if (g_ivt_off_cve < infile_size) {
+                    DEBUG("Found uboot IVT offset due to CVE fix%lx\n", g_ivt_off_cve);
+                    g_images[idx].offset = g_ivt_off_cve + FIT_IMAGES_OFFSET;
                 } else {
                     g_images[idx].offset = off + FIT_IMAGES_OFFSET;
                 }
@@ -1382,13 +1385,13 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
     } else {/* there is no magic number. it means we have IVT but no FIT*/
         err = process_ivt_image(off, infile_buf, loop, infile_size, ofname);
         if (err) {
-            if (err != -ERANGE) {
+            if (err != -ERANGE && err != -EAGAIN) {
                 errno = EFAULT;
                 fprintf(stderr, "ERROR: Could not find IVT at offset %lx %s\n",
                         off, strerror(EFAULT));
                 return -E_FAILURE;
             } else
-                return -ERANGE;
+                return err;
         }
     }
     return E_OK;
@@ -1407,8 +1410,6 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
 static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
               char *ifname_full, char *ofname)
 {
-    int pat_len = sizeof(g_ivt_v1) / sizeof(g_ivt_v1[0]);
-    unsigned short order = ASCENDING;
     unsigned long loop = 0, off = 0, pos = g_image_offset;
     bool found = false;
     int err = -E_FAILURE;
@@ -1420,12 +1421,15 @@ static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
     }
 
     do {
-        off = search_pattern(infile_buf, g_ivt_v1, infile_size,
-                             pat_len, order, pos, g_ivt_v1_mask, HAB_IVT_SEARCH_STEP);
+        if (!IS_HAB_IMAGE(infile_buf, infile_size, g_ivt_v1, g_ivt_v1_mask, off, pos)) {
+            pos = off + HAB_IVT_SEARCH_STEP;
+            goto next_iteration;
+        }
+
         if (off < infile_size) {
             found = true;
             memset(g_images, 0, NUM_IMGS * sizeof(g_images[0]));
-            if (!loop) {/* first iteration */
+            if (!loop && !IS_FIT_IMAGE(infile_buf, off)) {/* first iteration */
                 err = process_ivt_image(off, infile_buf, loop, infile_size, ofname);
                 /* CSF was appended to the input image */
                 if (err == -ERANGE)
@@ -1443,15 +1447,20 @@ static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
                 if (err == -ERANGE)
                     return E_OK;
 
+                if (err == -EAGAIN) {
+                    pos = off + HAB_IVT_SEARCH_STEP;
+                    continue;
+                }
                 if (err)
                     goto  err_;
             }
             pos = off + HAB_IVT_SEARCH_STEP;
         }
+next_iteration:
         loop++;
     } while (off < infile_size);
 
-    if (err == -EAGAIN)
+    if (err == -EAGAIN && !g_ivt_off_cve)
         return err;
 
     if (!found) {
@@ -1654,7 +1663,7 @@ int main(int argc, char **argv)
         DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n",
               hdr_v3->tag, hdr_v3->length, hdr_v3->version);
         ret = sign_container(ibuf, ibuf_size, ifname_full, ofname);
-    } else if (IS_HAB_IMAGE(ibuf, ibuf_size, g_ivt_v1, g_ivt_v1_mask, off)) {
+    } else if (IS_HAB_IMAGE(ibuf, ibuf_size, g_ivt_v1, g_ivt_v1_mask, off, g_image_offset)) {
         g_image_offset += off;
         ivt_t *ivt = (ivt_t *)(ibuf + off);
         DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n",
