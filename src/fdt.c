@@ -818,7 +818,7 @@ int fit_image_get_load(const void *fit, int noffset, unsigned long *load)
 
 
 
-int parse_fdt(fdt_header_t *fit, image_block_t *images)
+int parse_fdt(fdt_header_t *fit, image_block_t *images, unsigned image_slots)
 {
     int images_noffset;
     int noffset;
@@ -842,26 +842,32 @@ int parse_fdt(fdt_header_t *fit, image_block_t *images)
     }
 
     /* Process its subnodes, print out component images details */
-    for (ndepth = 0, count = 0,
-        noffset = fdt_next_node(fit, images_noffset, &ndepth);
+    for (ndepth = 0,
+         noffset = fdt_next_node(fit, images_noffset, &ndepth);
          (noffset >= 0) && (ndepth > 0);
          noffset = fdt_next_node(fit, noffset, &ndepth)) {
         if (ndepth == 1) {
             const void *data;
-            images->valid = true;
+            if (count >= image_slots) {
+                if (g_fdt_debug) {
+                    printf("Can't allocate FDT node, images slots are full\n");
+                }
+                return -1;
+            }
+            images[count].valid = true;
 
             if (g_fdt_debug) {
                 /*
                  * Direct child node of the images parent node,
                  * i.e. component image node.
                  */
-                printf("%s Image %u (%s)\n", p, count++,
+                printf("%s Image %u (%s)\n", p, count,
                        fit_get_name(fit, noffset, NULL));
             }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
             ret = fit_image_get_data_and_size(fit, noffset, &data,
-                              &images->size);
+                              &images[count].size);
 #pragma GCC diagnostic pop
             if (g_fdt_debug) {
                 if(ret)
@@ -870,13 +876,13 @@ int parse_fdt(fdt_header_t *fit, image_block_t *images)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
             ret = fit_image_get_load(fit, noffset,
-                         &images->load_addr);
+                         &images[count].load_addr);
 #pragma GCC diagnostic pop
             if (g_fdt_debug) {
                 if(ret)
                     printf("Could not get image address\n");
             }
-            images++;
+            count++;
         }
     }
     return 0;

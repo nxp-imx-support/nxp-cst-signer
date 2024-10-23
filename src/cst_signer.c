@@ -1292,7 +1292,8 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
          * g_images + 1 contains all the Images from FIT:
          * Image 0 (uboot@1),Image 1 (fdt@1) ,Image 2 (atf@1)
          */
-        err = parse_fdt(fit_img, &g_images[1]);
+        err = parse_fdt(fit_img, &g_images[1],
+                sizeof(g_images) / sizeof(g_images[0]) - 1);
         if (err) {
             errno = EFAULT;
             fprintf(stderr, "Could not parse FIT image %s\n", strerror(EFAULT));

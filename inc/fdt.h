@@ -207,7 +207,7 @@ typedef uint16_t fdt16_t;
 typedef uint32_t fdt32_t;
 typedef uint64_t fdt64_t;
 
-#define NUM_IMGS 0x5
+#define NUM_IMGS 0x8
 
 #define FDT_TAGSIZE    sizeof(fdt32_t)
 
@@ -320,7 +320,7 @@ const void *fdt_getprop_namelen(const void *fdt, int nodeoffset,
                 const char *name, int namelen, int *lenp);
 const char *fdt_get_alias_namelen(const void *fdt,
                   const char *name, int namelen);
-int parse_fdt(fdt_header_t *fit, image_block_t *images);
+int parse_fdt(fdt_header_t *fit, image_block_t *images, unsigned image_slots);
 int32_t fdt_ro_probe_(const void *fdt);
 int fdt_path_offset_namelen(const void *fdt, const char *path, int namelen);
 int fdt_path_offset(const void *fdt, const char *path);
