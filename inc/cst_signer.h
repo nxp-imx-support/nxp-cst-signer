@@ -111,6 +111,9 @@ typedef enum SOC_TYPE {
 /* offset of the FIT images relative to IVT offset */
 #define FIT_IMAGES_OFFSET 0x2000
 
+/* [IVT] + CSF size. In case of SPL is CSF size */
+#define IVT_CSF_SIZE 0x2000
+
 typedef struct {
     uint8_t tag;
     uint16_t length;

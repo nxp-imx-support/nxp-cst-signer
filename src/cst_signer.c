@@ -15,6 +15,8 @@
 
 uint32_t g_image_offset = 0;
 unsigned long g_ivt_off_cve = 0x0;
+unsigned long g_step = 0;
+int g_last_img_idx = 0;
 
 typedef struct {
     int cntr_num;
@@ -1138,6 +1140,7 @@ err:
  * @retval      -E_FAILURE  : Failure
  *               E_OK       : Success
  *              -ERANGE     : Exit from search loop
+ *              -EAGAIN     : Skip signing and continue search loop
  */
 static int process_ivt_image(unsigned long off, uint8_t *infile_buf,
                    unsigned long loop, long int infile_size,
@@ -1168,14 +1171,6 @@ static int process_ivt_image(unsigned long off, uint8_t *infile_buf,
                         ? (ivt->csf_addr - ivt->entry)
                         : (ivt->csf_addr - ivt->self_addr);
     csf_offset =  (ivt->csf_addr - ivt->self_addr) + off;
-
-    /* if an IVT is found inside the image which and is not the IVT CVE,
-     * then it's an invalid IVT. A valid IVT will be appended to the image
-     * (most likely kernel image)
-     * Anything in the middle is not valid. */
-    if (off != g_ivt_off_cve && csf_offset < infile_size) {
-        return -EAGAIN;
-    }
 
     /* Check if the image is a HDMI image */
     if (ivt->boot_data) {
@@ -1290,7 +1285,13 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
         DEBUG("Image[%d] addr 0x%08lx\n",0, g_images[0].load_addr);
         DEBUG("Image[%d] offset  0x%08lx\n",0, g_images[0].offset);
         DEBUG("Image[%d] size 0x%08lx\n",0, g_images[0].size);
+        DEBUG("Image[%d] csf_offset 0x%08x\n",0, csf_offset);
 
+        /* compute the step for searching the next IVT. The step value
+         * is IVT + CSF for the FDT image. Searching will jump over the IVT + CSF
+         * and eventually will find the IVT CVE fix over the rest of the FIT images
+         */
+        g_step = IVT_CSF_SIZE;
         /*
          * g_images + 1 contains all the Images from FIT:
          * Image 0 (uboot@1),Image 1 (fdt@1) ,Image 2 (atf@1)
@@ -1356,6 +1357,7 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
             DEBUG("Image[%d] addr 0x%08lx\n",idx, g_images[idx].load_addr);
             DEBUG("Image[%d] offset 0x%08lx\n",idx, g_images[idx].offset);
             DEBUG("Image[%d] size 0x%08lx\n",idx, g_images[idx].size);
+            g_last_img_idx = idx;
         }
 
         err = create_csf_file_v1(g_images, loop, ofname);
@@ -1384,6 +1386,12 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
         }
     } else {/* there is no magic number. it means we have IVT but no FIT*/
         err = process_ivt_image(off, infile_buf, loop, infile_size, ofname);
+        /* Make sure to step over the last image in FIT after processing the  IVTs inside FIT.
+         * A max of 2 IVTs can be present in FIT: FDT IVT and CVE IVT.
+         *
+         */
+        g_step = g_images[g_last_img_idx].offset + g_images[g_last_img_idx].size - off;
+        g_step = ALIGN(g_step, HAB_IVT_SEARCH_STEP);
         if (err) {
             if (err != -ERANGE && err != -EAGAIN) {
                 errno = EFAULT;
@@ -1414,21 +1422,22 @@ static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
     bool found = false;
     int err = -E_FAILURE;
 
+    memset(g_images, 0, NUM_IMGS * sizeof(g_images[0]));
     /* Copy file to be signed */
     if(copy_files(ifname_full, ofname)) {
         fprintf(stderr, "ERROR: Failed to copy files: %s and %s\n", ifname_full, ofname);
         goto err_;
     }
 
+    g_step = HAB_IVT_SEARCH_STEP;
     do {
         if (!IS_HAB_IMAGE(infile_buf, infile_size, g_ivt_v1, g_ivt_v1_mask, off, pos)) {
-            pos = off + HAB_IVT_SEARCH_STEP;
+            pos = off + g_step;
             goto next_iteration;
         }
 
         if (off < infile_size) {
             found = true;
-            memset(g_images, 0, NUM_IMGS * sizeof(g_images[0]));
             if (!loop && !IS_FIT_IMAGE(infile_buf, off)) {/* first iteration */
                 err = process_ivt_image(off, infile_buf, loop, infile_size, ofname);
                 /* CSF was appended to the input image */
@@ -1436,11 +1445,15 @@ static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
                     return E_OK;
 
                 if (err == -EAGAIN) {
-                    pos = off + HAB_IVT_SEARCH_STEP;
+                    pos = off + g_step;
                     continue;
                 }
                 if (err)
                     goto err_;
+
+                /* step over the CSF of SPL image by adding SPL image size with CSF size*/
+                g_step = g_images[0].size + IVT_CSF_SIZE - off;
+                g_step = ALIGN(g_step, HAB_IVT_SEARCH_STEP);
             } else {
                 err = process_fdt_images(off, infile_buf, loop, infile_size, ofname);
                 /* CSF was appended to the input image */
@@ -1448,13 +1461,13 @@ static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
                     return E_OK;
 
                 if (err == -EAGAIN) {
-                    pos = off + HAB_IVT_SEARCH_STEP;
+                    pos = off + g_step;
                     continue;
                 }
                 if (err)
                     goto  err_;
             }
-            pos = off + HAB_IVT_SEARCH_STEP;
+            pos = off + g_step;
         }
 next_iteration:
         loop++;
