@@ -127,7 +127,17 @@ int sign_csf(char *ifname, char *ofname)
         return -E_FAILURE;
     }
 #if defined(__linux__)
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/linux64/bin/cst ", g_cst_path))) {
+    const char *sz_bin_path="/linux64/bin/cst";
+    const char *sz_extra_venv="";
+    char tmp_sz_buf[128];
+    if ( g_pkcs11 ) { // pkcs#11 - extend with ENV variable and modify to compiled cst
+      #define PKCS11_MODULE_PATH_VAR "PKCS11_MODULE_PATH"
+      sprintf( tmp_sz_buf, "%s=%s && ", PKCS11_MODULE_PATH_VAR, getenv(PKCS11_MODULE_PATH_VAR)); // The last space is important!
+      sz_extra_venv=tmp_sz_buf;
+      sz_bin_path="/code/build/cst";
+    }
+
+    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s%s%s ", sz_extra_venv, g_cst_path, sz_bin_path))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         return -E_FAILURE;
     }
@@ -139,8 +149,12 @@ int sign_csf(char *ifname, char *ofname)
 #else
     #error Unsupported OS
 #endif
-    
-    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), "--i %s --o %s", ifname, ofname))) {
+
+    const char *sz_cmd_format =  "--i %s --o %s";
+    if ( g_pkcs11 ) {
+	    sz_cmd_format = "-b pkcs11 --i %s --o %s"; // use pkcs11
+    }
+    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), sz_cmd_format, ifname, ofname))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         return -E_FAILURE;
     }
@@ -529,8 +543,17 @@ static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *cs
     cfg_parser(fp_cfg, rvalue, RSIZE, "srk_source");
     if ('\0' == rvalue[0])
         fprintf(fp_csf_file, "\tSource = \"%s/crts/SRK1_sha256_prime256v1_v3_ca_crt.pem\"\n", g_cst_path);
-    else
-        fprintf(fp_csf_file, "\tSource = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+    else {
+        if ( 0 == g_pkcs11 ) { 
+		DEBUG("Source = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+		fprintf(fp_csf_file, "\tSource = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+
+        } else { // use PKCS#11
+	        DEBUG("PKCS11:\n");
+	        DEBUG("Source = %s\n", rvalue);
+	        fprintf(fp_csf_file, "\tSource = \"%s\"\n", rvalue);
+        }
+    }
 
     cfg_parser(fp_cfg, rvalue, RSIZE, "srk_source_index");
     if ('\0' == rvalue[0])
@@ -1094,7 +1117,18 @@ static int generate_csf_v1(int idx, char *csf_file)
     }
 
 #if defined(__linux__)
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/linux64/bin/cst ", g_cst_path))) {
+    const char *sz_bin_path="/linux64/bin/cst";
+    const char *sz_extra_venv="";
+    char tmp_sz_buf[128];
+    if ( g_pkcs11 ) { // do some trckling
+      #define PKCS11_MODULE_PATH_VAR "PKCS11_MODULE_PATH"
+      sprintf( tmp_sz_buf, "%s=%s && ", PKCS11_MODULE_PATH_VAR, getenv(PKCS11_MODULE_PATH_VAR)); // The last space is important!
+      sz_extra_venv=tmp_sz_buf;
+      sz_bin_path="/code/build/cst";
+    }
+
+  
+    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s%s%s ", sz_extra_venv, sz_bin_path, g_cst_path))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         goto err;
     }
@@ -1106,8 +1140,12 @@ static int generate_csf_v1(int idx, char *csf_file)
 #else
     #error Unsupported OS
 #endif
+    const char *sz_cmd_format =  "--i %s --o %s";
+    if ( g_pkcs11 ) {
+	    sz_cmd_format = "-b pkcs11 --i %s --o %s"; // use pkcs11
+    }
 
-    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), "--i %s --o %s", csf_ifilename, csf_ofilename))) {
+    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), sz_cmd_format, csf_ifilename, csf_ofilename))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         goto err;
     }
@@ -1619,6 +1657,16 @@ int main(int argc, char **argv)
                 print_usage();
                 exit(EXIT_SUCCESS);
                 break;
+            case 'p':			// enable pkcs, this command does NOT take 'pkcs11' as option as cst
+#if defined(__linux__) 
+                g_pkcs11 = 1;
+#else
+                print_usage();
+		DEBUG("pkcs#11 only implemented on Linux\n");
+                exit(EXIT_FAILURE);
+
+#endif                
+	         break;
             /* Invalid Option */
             default:
                 break;

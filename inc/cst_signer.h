@@ -20,7 +20,7 @@
         Command line arguments
 ************************/
 /* Valid short command line option letters. */
-const char* const short_opt = "hfdi:o:c:";
+const char* const short_opt = "hfdi:o:c:p:";
 
 /* Valid long command line options. */
 const struct option long_opt[] =
@@ -30,6 +30,7 @@ const struct option long_opt[] =
     {"offset", required_argument,  0, 'o'},
     {"debug", no_argument,  0, 'd'},
     {"fdt-debug", no_argument,  0, 'f'},
+    {"pkcs11", no_argument,  0, 'p'},
     {"help", no_argument, 0, 'h'},
     {NULL, 0, NULL, 0}
 };
@@ -42,6 +43,7 @@ const char* desc_opt[] =
     "(Optional) Offset to the start of image",
     "(Optional) Enable debug information",
     "(Optional) FDT debug information",
+    "(Optional) Enable pkcs#11 signing. Currently only Linux support, and for cst-3.4.1 you must compile the source",
     "This text",
     NULL
 };
@@ -186,6 +188,7 @@ static bool g_debug = 0;
 static char *g_csf_cfgfilename = NULL;
 extern uint32_t g_image_offset;
 static char *g_cst_path = NULL;
+static bool g_pkcs11 = 0;	// static to enable pkcs#11 signing
 
 unsigned char g_ivt_v1_mask[] = {0xFF,0xFF,0xFF,0xF0};
 unsigned char g_ivt_v1[] = {0xD1,0x00,0x20,0x41};
