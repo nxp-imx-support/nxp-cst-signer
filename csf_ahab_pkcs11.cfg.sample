@@ -1,0 +1,11 @@
+#Header
+header_version=1.0
+#Install SRK
+srktable_file=SRK_1_2_3_4_table.bin
+srk_source=pkcs11:model=YubiKey%20YK5;manufacturer=Yubico%20%28www.yubico.com%29;serial=31832638;token=YubiKey%20PIV%20%2331832638;id=%02;type=private
+srk_source_index=0
+srk_source_set=OEM
+srk_revocations=0x0
+#Install Certificate
+sgk_file=
+sgk_permissions=

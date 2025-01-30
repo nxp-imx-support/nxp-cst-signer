@@ -549,8 +549,7 @@ static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *cs
 		fprintf(fp_csf_file, "\tSource = \"%s/crts/%s\"\n", g_cst_path, rvalue);
 
         } else { // use PKCS#11
-	        DEBUG("PKCS11:\n");
-	        DEBUG("Source = %s\n", rvalue);
+	        DEBUG("PKCS11, Source = %s\n", rvalue);
 	        fprintf(fp_csf_file, "\tSource = \"%s\"\n", rvalue);
         }
     }

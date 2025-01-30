@@ -35,6 +35,11 @@ Steps required
 - build cst-3.4.1 (make sure the copmiled binary is in ${CST_PATH}/code/build director)
 - make sure that you have PKCS11_MODULE_PATH to the pkcs#11 library when executing cst-signer
 - make sure to set the PKCS#11 as key in the csf.
+- Set private key in csf : "pkcs11# url". The URL can be fetched using: 
+```
+p11tool --provider $PKCS11_MODULE_PATH --list-all-privkeys --login 
+```
+- Had to remove the "object" from the pkcs11 url to make it work, needs to be investigated.
 
 Note: 
 - The benfit of using this is that it protects private key from exposure.
