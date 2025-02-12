@@ -1127,7 +1127,7 @@ static int generate_csf_v1(int idx, char *csf_file)
     }
 
   
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s%s%s ", sz_extra_venv, sz_bin_path, g_cst_path))) {
+    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s%s%s ", sz_extra_venv, g_cst_path, sz_bin_path))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         goto err;
     }

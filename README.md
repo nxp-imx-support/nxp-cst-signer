@@ -26,7 +26,7 @@ Build this tool using `make` command.
 ---
 
 ### Sign images using hardware backed cryptographic keys "--pkcs11"
-This introduces a few changes to nxp-cst--signer for secure hardware singing.
+This introduces a few changes to nxp-cst--signer for secure hardware signing.
 This code is experimental, and has been tested with AHAB mimx9352.
 
 Steps required 
@@ -43,10 +43,10 @@ p11tool --provider $PKCS11_MODULE_PATH --list-all-privkeys --login
 
 Note: 
 - The benfit of using this is that it protects private key from exposure.
-- Make sure that you use a have a recoverable backup of your private key.
+- Make sure that you use a have a recoverable backup of your private key. And consult the manual from pkcs11 key
 - The solution protects the private key from exposure of normal usage.
 
-PKCS#11 is expeimental support is added for linux, append --pkcs11
+PKCS#11 is experimental support is added for linux, append --pkcs11
 In order for this to work, PKCS11_MODULE_PATH must be set before invoking 
 
 ----
