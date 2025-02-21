@@ -15,7 +15,7 @@
 
 uint32_t g_image_offset = 0;
 unsigned long g_ivt_off_cve = 0x0;
-unsigned long g_step = 0;
+unsigned long g_ivt_search_step = 0;
 int g_last_img_idx = 0;
 
 typedef struct {
@@ -1291,7 +1291,7 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
          * is IVT + CSF for the FDT image. Searching will jump over the IVT + CSF
          * and eventually will find the IVT CVE fix over the rest of the FIT images
          */
-        g_step = IVT_CSF_SIZE;
+        g_ivt_search_step = IVT_CSF_SIZE;
         /*
          * g_images + 1 contains all the Images from FIT:
          * Image 0 (uboot@1),Image 1 (fdt@1) ,Image 2 (atf@1)
@@ -1338,8 +1338,12 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
                  */
                 if (g_ivt_off_cve < infile_size) {
                     DEBUG("Found uboot IVT offset due to CVE fix%lx\n", g_ivt_off_cve);
+                    /* offset of the first image in FIT in case of CVE vulnerability
+                     * is IVT CVE offset + FIT_IMAGES_OFFSET */
                     g_images[idx].offset = g_ivt_off_cve + FIT_IMAGES_OFFSET;
                 } else {
+                    /* offset of the first image in FIT in case of no CVE vulnerability
+                     * is IVT offset + FIT_IMAGES_OFFSET */
                     g_images[idx].offset = off + FIT_IMAGES_OFFSET;
                 }
             } else {
@@ -1390,8 +1394,8 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
          * A max of 2 IVTs can be present in FIT: FDT IVT and CVE IVT.
          *
          */
-        g_step = g_images[g_last_img_idx].offset + g_images[g_last_img_idx].size - off;
-        g_step = ALIGN(g_step, HAB_IVT_SEARCH_STEP);
+        g_ivt_search_step = g_images[g_last_img_idx].offset + g_images[g_last_img_idx].size - off;
+        g_ivt_search_step = ALIGN(g_ivt_search_step, HAB_IVT_SEARCH_STEP);
         if (err) {
             if (err != -ERANGE && err != -EAGAIN) {
                 errno = EFAULT;
@@ -1429,10 +1433,10 @@ static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
         goto err_;
     }
 
-    g_step = HAB_IVT_SEARCH_STEP;
+    g_ivt_search_step = HAB_IVT_SEARCH_STEP;
     do {
         if (!IS_HAB_IMAGE(infile_buf, infile_size, g_ivt_v1, g_ivt_v1_mask, off, pos)) {
-            pos = off + g_step;
+            pos = off + g_ivt_search_step;
             goto next_iteration;
         }
 
@@ -1445,15 +1449,15 @@ static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
                     return E_OK;
 
                 if (err == -EAGAIN) {
-                    pos = off + g_step;
+                    pos = off + g_ivt_search_step;
                     continue;
                 }
                 if (err)
                     goto err_;
 
-                /* step over the CSF of SPL image by adding SPL image size with CSF size*/
-                g_step = g_images[0].size + IVT_CSF_SIZE - off;
-                g_step = ALIGN(g_step, HAB_IVT_SEARCH_STEP);
+                /* step over the CSF by adding  image size with CSF size*/
+                g_ivt_search_step = g_images[0].size + IVT_CSF_SIZE - off;
+                g_ivt_search_step = ALIGN(g_ivt_search_step, HAB_IVT_SEARCH_STEP);
             } else {
                 err = process_fdt_images(off, infile_buf, loop, infile_size, ofname);
                 /* CSF was appended to the input image */
@@ -1461,19 +1465,19 @@ static int sign_hab_image(uint8_t *infile_buf, long int infile_size,
                     return E_OK;
 
                 if (err == -EAGAIN) {
-                    pos = off + g_step;
+                    pos = off + g_ivt_search_step;
                     continue;
                 }
                 if (err)
                     goto  err_;
             }
-            pos = off + g_step;
+            pos = off + g_ivt_search_step;
         }
 next_iteration:
         loop++;
     } while (off < infile_size);
 
-    if (err == -EAGAIN && !g_ivt_off_cve)
+    if (err == -EAGAIN)
         return err;
 
     if (!found) {

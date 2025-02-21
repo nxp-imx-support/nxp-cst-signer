@@ -276,7 +276,9 @@ unsigned char g_ivt_v3_ahab_array[2][4] = {{0x00 ,0x00, 0x00, 0x87},/*tag_b0*/
          ivt_t *ivt = (ivt_t *)(buf + off);                                       \
                                                                                   \
          if ((be32_to_cpu(fit_img->magic) == FDT_MAGIC) &&                        \
-             (ivt->self_addr >= ivt->entry)) {                                    \
+             (ivt->self_addr >= ivt->entry) && (ivt->csf_addr > ivt->entry) &&    \
+             (ivt->csf_addr > ivt->self_addr) && (!ivt->reserved1) &&             \
+             (!ivt->reserved2)) {                                                 \
              is_valid = true;                                                     \
          }                                                                        \
      }                                                                            \
