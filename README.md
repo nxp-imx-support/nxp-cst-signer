@@ -17,6 +17,10 @@ This tool requires the CST to be present at a preset location. The tool can be
 invoked and the path to CST must be provided using the environment variable 
 ***CST_PATH***.
 
+Optionally, an environment variable ***KEYS_PATH*** can be specified if the 
+signing keys are not stored at CST_PATH. If undefined, the tool will resort to 
+CST_PATH location for fetching the signing keys.
+
 ---
 
 ### Build
