@@ -185,7 +185,7 @@ typedef struct {
 static bool g_debug = 0;
 static char *g_csf_cfgfilename = NULL;
 extern uint32_t g_image_offset;
-static char *g_cst_path = NULL;
+static char *g_cst_path = NULL, *g_keys_path = NULL;
 
 unsigned char g_ivt_v1_mask[] = {0xFF,0xFF,0xFF,0xF0};
 unsigned char g_ivt_v1[] = {0xD1,0x00,0x20,0x41};
