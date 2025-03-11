@@ -28,6 +28,7 @@ Build this tool using `make` command.
 ### Sign images using hardware backed cryptographic keys "--pkcs11"
 This introduces a few changes to nxp-cst--signer for secure hardware signing.
 This code is experimental, and has been tested with AHAB mimx9352, iMX.8MP, and i.MX8MN.
+Have not tested with fastboot on i.MX8MP or i.MX8MN.
 
 Steps required 
 - Works currently on linux
@@ -37,9 +38,11 @@ Steps required
 - make sure to set the PKCS#11 as key in the cfg.
 - Set private key in the cfg : "pkcs11# url". The URL can be fetched using: 
 ```
-p11tool --provider $PKCS11_MODULE_PATH --list-all-privkeys --login 
+p11tool --provider $PKCS11_MODULE_PATH --list-all-privkeys --login
+# --only-urls can be added to reduce the output
 ```
 - Had to remove the "object" from the pkcs11 url to make it work, needs to be investigated.
+
 
 Note: 
 - The benfit of using this is that it protects private key from exposure.

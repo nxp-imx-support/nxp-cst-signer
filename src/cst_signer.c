@@ -253,6 +253,10 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
     char rvalue[RSIZE] = {0};
     bool fast_auth = false;
 
+    // pkcs11 keys are prefixed with pkcs11: we should prepend path    
+    const char *sz_pkcs11prefix="pkcs11:";
+
+
     if (0 > (snprintf(csf_filename, sizeof(csf_filename), "csf_image%d.txt", idx))) {
         fprintf(stderr, "ERROR: Cannot populate CSF file name.\n");
         goto err;
@@ -322,7 +326,14 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
         fast_auth = true;
         /* Install NOCAK */
         fprintf(fp_csf_file, "[Install NOCAK]\n");
-        fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        
+        if ( 0 == strncmp(rvalue, sz_pkcs11prefix, strlen(sz_pkcs11prefix)) ) {
+          // PEGE: Don't add path when we are using pkcs#11
+           printf("NOT TESTED, do not add path when we are using pkcs#11\n");
+           fprintf(fp_csf_file, "\tFile = \"%s\"\n", rvalue);
+        } else {
+           fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        }
     } else {
         /* Prepare normal authentication parameters */
         /* Install CSFK */
@@ -330,8 +341,16 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
         cfg_parser(fp_cfg, rvalue, RSIZE, "csfk_file");
         if ('\0' == rvalue[0])
             fprintf(fp_csf_file, "\tFile = \"%s/crts/CSF1_1_sha256_2048_65537_v3_usr_crt.pem\"\n", g_cst_path);
-        else
-            fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        else {
+           if ( 0 == strncmp(rvalue, sz_pkcs11prefix, strlen(sz_pkcs11prefix)) ) {
+             // PEGE: Don't add path when we are using pkcs#11
+             printf("Don't add path when we are using pkcs#11\n");
+             fprintf(fp_csf_file, "\tFile = \"%s\"\n", rvalue);
+             
+           } else {
+             fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+           }
+        }
     }
 
     fprintf(fp_csf_file, "[Authenticate CSF]\n");
@@ -434,8 +453,15 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
         cfg_parser(fp_cfg, rvalue, RSIZE, "img_file");
         if ('\0' == rvalue[0])
             fprintf(fp_csf_file, "\tFile = \"%s/crts/IMG1_1_sha256_2048_65537_v3_usr_crt.pem\"\n", g_cst_path);
-        else
-            fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        else {
+           if ( 0 == strncmp(rvalue, sz_pkcs11prefix, strlen(sz_pkcs11prefix)) ) {
+             // PEGE: Don't add path when we are using pkcs#11
+             printf("Don't add path when we are using pkcs#11\n");
+             fprintf(fp_csf_file, "\tFile = \"%s\"\n", rvalue);
+           } else {     
+              fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+           }
+        }
     }
 
     /* Authenticate Data */
