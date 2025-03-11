@@ -8,7 +8,8 @@ srk_source_index=0
 #Install NOCAK
 nocak_file=
 #Install CSFK
-csfk_file=CSF1_1_sha256_2048_65537_v3_usr_crt.pem
+# csfk_file=CSF1_1_sha256_2048_65537_v3_usr_crt.pem
+csfk_file=pkcs11:model=YubiKey%20YK5;manufacturer=Yubico%20%28www.yubico.com%29;serial=31832638;token=YubiKey%20PIV%20%2331832638;id=%03;type=private
 #Authenticate CSF
 #Unlock
 unlock_engine=
@@ -18,10 +19,10 @@ unlock_uid=
 img_verification_index=0
 img_target_index=2
 #img_file=IMG1_1_sha256_2048_65537_v3_usr_crt.pem
+# PEGE experimental (not yet fully tested)
+img_file=pkcs11:model=YubiKey%20YK5;manufacturer=Yubico%20%28www.yubico.com%29;serial=31832638;token=YubiKey%20PIV%20%2331832638;id=%02;type=private
 #Authenticate Data
 auth_verification_index=2
 
 
-# PEGE experimental (not yet fully tested)
-img_file=pkcs11:model=YubiKey%20YK5;manufacturer=Yubico%20%28www.yubico.com%29;serial=31832638;token=YubiKey%20PIV%20%2331832638;id=%02;type=private
 
