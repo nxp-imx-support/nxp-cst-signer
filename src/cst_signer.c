@@ -134,7 +134,7 @@ int sign_csf(char *ifname, char *ofname)
       #define PKCS11_MODULE_PATH_VAR "PKCS11_MODULE_PATH"
       sprintf( tmp_sz_buf, "%s=%s && ", PKCS11_MODULE_PATH_VAR, getenv(PKCS11_MODULE_PATH_VAR)); // The last space is important!
       sz_extra_venv=tmp_sz_buf;
-      sz_bin_path="/code/build/cst";
+      //sz_bin_path="/code/build/cst";
     }
 
     if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s%s%s ", sz_extra_venv, g_cst_path, sz_bin_path))) {
@@ -1123,7 +1123,7 @@ static int generate_csf_v1(int idx, char *csf_file)
       #define PKCS11_MODULE_PATH_VAR "PKCS11_MODULE_PATH"
       sprintf( tmp_sz_buf, "%s=%s && ", PKCS11_MODULE_PATH_VAR, getenv(PKCS11_MODULE_PATH_VAR)); // The last space is important!
       sz_extra_venv=tmp_sz_buf;
-      sz_bin_path="/code/build/cst";
+      //sz_bin_path="/code/build/cst";
     }
 
   
