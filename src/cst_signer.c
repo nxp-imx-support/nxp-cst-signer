@@ -127,7 +127,17 @@ int sign_csf(char *ifname, char *ofname)
         return -E_FAILURE;
     }
 #if defined(__linux__)
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/linux64/bin/cst ", g_cst_path))) {
+    const char *sz_bin_path="/linux64/bin/cst";
+    const char *sz_extra_venv="";
+    char tmp_sz_buf[128];
+    if ( g_pkcs11 ) { // pkcs#11 - extend with ENV variable and modify to compiled cst
+      #define PKCS11_MODULE_PATH_VAR "PKCS11_MODULE_PATH"
+      sprintf( tmp_sz_buf, "%s=%s && ", PKCS11_MODULE_PATH_VAR, getenv(PKCS11_MODULE_PATH_VAR)); // The last space is important!
+      sz_extra_venv=tmp_sz_buf;
+      //sz_bin_path="/code/build/cst";
+    }
+
+    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s%s%s ", sz_extra_venv, g_cst_path, sz_bin_path))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         return -E_FAILURE;
     }
@@ -139,8 +149,12 @@ int sign_csf(char *ifname, char *ofname)
 #else
     #error Unsupported OS
 #endif
-    
-    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), "--i %s --o %s", ifname, ofname))) {
+
+    const char *sz_cmd_format =  "--i %s --o %s";
+    if ( g_pkcs11 ) {
+	    sz_cmd_format = "-b pkcs11 --i %s --o %s"; // use pkcs11
+    }
+    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), sz_cmd_format, ifname, ofname))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         return -E_FAILURE;
     }
@@ -239,6 +253,10 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
     char rvalue[RSIZE] = {0};
     bool fast_auth = false;
 
+    // pkcs11 keys are prefixed with pkcs11: we should prepend path    
+    const char *sz_pkcs11prefix="pkcs11:";
+
+
     if (0 > (snprintf(csf_filename, sizeof(csf_filename), "csf_image%d.txt", idx))) {
         fprintf(stderr, "ERROR: Cannot populate CSF file name.\n");
         goto err;
@@ -308,7 +326,14 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
         fast_auth = true;
         /* Install NOCAK */
         fprintf(fp_csf_file, "[Install NOCAK]\n");
-        fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        
+        if ( 0 == strncmp(rvalue, sz_pkcs11prefix, strlen(sz_pkcs11prefix)) ) {
+          // PEGE: Don't add path when we are using pkcs#11
+           printf("NOT TESTED, do not add path when we are using pkcs#11\n");
+           fprintf(fp_csf_file, "\tFile = \"%s\"\n", rvalue);
+        } else {
+           fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        }
     } else {
         /* Prepare normal authentication parameters */
         /* Install CSFK */
@@ -316,8 +341,16 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
         cfg_parser(fp_cfg, rvalue, RSIZE, "csfk_file");
         if ('\0' == rvalue[0])
             fprintf(fp_csf_file, "\tFile = \"%s/crts/CSF1_1_sha256_2048_65537_v3_usr_crt.pem\"\n", g_cst_path);
-        else
-            fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        else {
+           if ( 0 == strncmp(rvalue, sz_pkcs11prefix, strlen(sz_pkcs11prefix)) ) {
+             // PEGE: Don't add path when we are using pkcs#11
+             printf("Don't add path when we are using pkcs#11\n");
+             fprintf(fp_csf_file, "\tFile = \"%s\"\n", rvalue);
+             
+           } else {
+             fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+           }
+        }
     }
 
     fprintf(fp_csf_file, "[Authenticate CSF]\n");
@@ -420,8 +453,15 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
         cfg_parser(fp_cfg, rvalue, RSIZE, "img_file");
         if ('\0' == rvalue[0])
             fprintf(fp_csf_file, "\tFile = \"%s/crts/IMG1_1_sha256_2048_65537_v3_usr_crt.pem\"\n", g_cst_path);
-        else
-            fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        else {
+           if ( 0 == strncmp(rvalue, sz_pkcs11prefix, strlen(sz_pkcs11prefix)) ) {
+             // PEGE: Don't add path when we are using pkcs#11
+             printf("Don't add path when we are using pkcs#11\n");
+             fprintf(fp_csf_file, "\tFile = \"%s\"\n", rvalue);
+           } else {     
+              fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+           }
+        }
     }
 
     /* Authenticate Data */
@@ -529,8 +569,16 @@ static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *cs
     cfg_parser(fp_cfg, rvalue, RSIZE, "srk_source");
     if ('\0' == rvalue[0])
         fprintf(fp_csf_file, "\tSource = \"%s/crts/SRK1_sha256_prime256v1_v3_ca_crt.pem\"\n", g_cst_path);
-    else
-        fprintf(fp_csf_file, "\tSource = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+    else {
+        if ( 0 == g_pkcs11 ) { 
+		DEBUG("Source = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+		fprintf(fp_csf_file, "\tSource = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+
+        } else { // use PKCS#11
+	        DEBUG("PKCS11, Source = %s\n", rvalue);
+	        fprintf(fp_csf_file, "\tSource = \"%s\"\n", rvalue);
+        }
+    }
 
     cfg_parser(fp_cfg, rvalue, RSIZE, "srk_source_index");
     if ('\0' == rvalue[0])
@@ -1094,7 +1142,18 @@ static int generate_csf_v1(int idx, char *csf_file)
     }
 
 #if defined(__linux__)
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/linux64/bin/cst ", g_cst_path))) {
+    const char *sz_bin_path="/linux64/bin/cst";
+    const char *sz_extra_venv="";
+    char tmp_sz_buf[128];
+    if ( g_pkcs11 ) { // do some trckling
+      #define PKCS11_MODULE_PATH_VAR "PKCS11_MODULE_PATH"
+      sprintf( tmp_sz_buf, "%s=%s && ", PKCS11_MODULE_PATH_VAR, getenv(PKCS11_MODULE_PATH_VAR)); // The last space is important!
+      sz_extra_venv=tmp_sz_buf;
+      //sz_bin_path="/code/build/cst";
+    }
+
+  
+    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s%s%s ", sz_extra_venv, g_cst_path, sz_bin_path))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         goto err;
     }
@@ -1106,8 +1165,12 @@ static int generate_csf_v1(int idx, char *csf_file)
 #else
     #error Unsupported OS
 #endif
+    const char *sz_cmd_format =  "--i %s --o %s";
+    if ( g_pkcs11 ) {
+	    sz_cmd_format = "-b pkcs11 --i %s --o %s"; // use pkcs11
+    }
 
-    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), "--i %s --o %s", csf_ifilename, csf_ofilename))) {
+    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), sz_cmd_format, csf_ifilename, csf_ofilename))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         goto err;
     }
@@ -1619,6 +1682,16 @@ int main(int argc, char **argv)
                 print_usage();
                 exit(EXIT_SUCCESS);
                 break;
+            case 'p':			// enable pkcs, this command does NOT take 'pkcs11' as option as cst
+#if defined(__linux__) 
+                g_pkcs11 = 1;
+#else
+                print_usage();
+		DEBUG("pkcs#11 only implemented on Linux\n");
+                exit(EXIT_FAILURE);
+
+#endif                
+	         break;
             /* Invalid Option */
             default:
                 break;

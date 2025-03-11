@@ -56,11 +56,22 @@ void cfg_parser(FILE *fp_cfgfile, char *res_val, unsigned int res_size, char *ex
             !(strncmp(line_buf, "//", 2)) || \
             ('\0' == line_buf[0]))
             continue;
+#if defined(__linux__)
+	if ( NULL != strchr(line_buf, '\r') ) {
+		printf("This program expects lines ending with only \\n\n");  // it passes \r to cst that causes failure.
+		exit(-1);
+	}
+#endif
         /* Get value of the corresponding key */
         res = get_value(line_buf, exp_key);
         if (NULL != res) {
             /* Copy until the new line character */
-            strncpy(res_val, res, strlen(res) - 1);
+            if ( strlen(res) ) // // Added a test for empty value field on last row "sgk_permissions=\x0", to avoid segmentation failure.
+            	strncpy(res_val, res, strlen(res) - 1);
+            else {
+            	printf("Code expect lf on last line\n");  // else: segmentation error
+		exit(-1);
+            }
             break;
         }
     }
