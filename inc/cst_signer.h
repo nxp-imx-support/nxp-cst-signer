@@ -38,7 +38,7 @@ const struct option long_opt[] =
 const char* desc_opt[] =
 {
     "Input image to be signed",
-    "Input config file to prepare CSF (See csf_ahab.cfg.sample/csf_hab.cfg.sample for details)",
+    "Input config file to prepare CSF/YAML config (See csf_ahab.cfg.sample/csf_hab.cfg.sample/spsdk_ahab.cfg.sample for details)",
     "(Optional) Offset to the start of image",
     "(Optional) Enable debug information",
     "(Optional) FDT debug information",
@@ -62,7 +62,7 @@ const char* desc_opt[] =
 
 #define DEBUG(fmt, ...)     do { \
                                 if (1 == g_debug) { \
-                                    printf("%s:%s:%d: " fmt, __FILE__, __FUNCTION__, __LINE__, __VA_ARGS__); \
+                                    printf("%s:%s:%d: " fmt, __FILE__, __FUNCTION__, __LINE__, ##__VA_ARGS__); \
                                 } \
                             } while(0)
 
@@ -186,9 +186,10 @@ typedef struct {
 
 /*   Global Variables   */
 static bool g_debug = 0;
-static char *g_csf_cfgfilename = NULL;
+static char *g_cfgfilename = NULL;
 extern uint32_t g_image_offset;
-static char *g_cst_path = NULL;
+static char *g_sig_tool_path = NULL;
+static char *g_sig_data_path = NULL;
 
 unsigned char g_ivt_v1_mask[] = {0xFF,0xFF,0xFF,0xF0};
 unsigned char g_ivt_v1[] = {0xD1,0x00,0x20,0x41};

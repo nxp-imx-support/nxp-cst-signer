@@ -109,42 +109,165 @@ unsigned long search_pattern(const unsigned char *buff, unsigned char *pattern,
 }
 
 /*
- * @brief       Common function to call CST to sign the generated CSF file
+ * @brief       Find SPSDK tool from the g_sig_tool_path
  *
- * @param[in]   ifname  : Input CSF filename
- * @param[out]  ofname  : Output signed filename
+ * @param[in,out] spsdk_path : Empty array to the spsdk path gets filled with
+ *                            g_sig_tool_path and spsdk binary location
  *
  * @retval      -E_FAILURE : Failure
  *               E_OK      : Success
  */
-int sign_csf(char *ifname, char *ofname)
+static int find_spsdk_tool(char *spsdk_path)
 {
-    ASSERT(ifname, -1);
-    ASSERT(ofname, -1);
+    ASSERT(spsdk_path, -1);
 
-    char sys_cmd[SYS_CMD_LEN] = {0};
+    if (strlen(spsdk_path)) {
+        DEBUG("INFO: Emptying path to search tool...\n");
+        memset(spsdk_path, 0, SYS_CMD_LEN);
+    }
 
-    /* Checking if processor is available */
-    if (!(system(NULL))) {
-        fprintf(stderr, "ERROR: Command processor is not available. Exiting.\n");
-        return -E_FAILURE;
-    }
-#if defined(__linux__)
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/linux64/bin/cst ", g_cst_path))) {
-        fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
-        return -E_FAILURE;
-    }
-#elif defined(_WIN32) || defined(_WIN64)
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/mingw32/bin/cst.exe ", g_cst_path))) {
+    /* Build SPSDK path */
+#if defined(__linux__) || defined(_WIN32) || defined(_WIN64)
+    if (0 > (snprintf(spsdk_path, SYS_CMD_LEN, "%s/spsdk", g_sig_tool_path))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         return -E_FAILURE;
     }
 #else
     #error Unsupported OS
 #endif
-    
-    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), "--i %s --o %s", ifname, ofname))) {
+
+    /* Check if the SPSDK binary exists */
+    if (access(spsdk_path, X_OK)) {
+        DEBUG("SPSDK tool is not found at %s\n", spsdk_path);
+        return -E_FAILURE;
+    }
+
+    if (strlen(spsdk_path)) {
+        DEBUG("INFO: Emptying path to search tool...\n");
+        memset(spsdk_path, 0, SYS_CMD_LEN);
+    }
+
+    /* Build SPSDK nxpimage path */
+#if defined(__linux__) || defined(_WIN32) || defined(_WIN64)
+    if (0 > (snprintf(spsdk_path, SYS_CMD_LEN, "%s/nxpimage", g_sig_tool_path))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
+        return -E_FAILURE;
+    }
+#else
+    #error Unsupported OS
+#endif
+
+    /* Check if the SPSDK binary exists */
+    if (access(spsdk_path, X_OK)) {
+        DEBUG("SPSDK nxpimage tool is not found at %s\n", spsdk_path);
+        return -E_FAILURE;
+    }
+
+    return E_OK;
+}
+
+/*
+ * @brief       Find CST tool from the g_sig_tool_path
+ *
+ * @param[in,out] cst_path : Empty array to the cst path gets filled with
+ *                          g_sig_tool_path and cst binary location
+ *
+ * @retval      -E_FAILURE : Failure
+ *               E_OK      : Success
+ */
+static int find_cst_tool(char *cst_path)
+{
+
+    ASSERT(cst_path, -1);
+
+    if (strlen(cst_path)) {
+        DEBUG("WARNING: Emptying path to search tool...\n");
+        memset(cst_path, 0, SYS_CMD_LEN);
+    }
+
+    /* Build CST path */
+#if defined(__linux__)
+    if (0 > (snprintf(cst_path, SYS_CMD_LEN, "%s/linux64/bin/cst", g_sig_tool_path))) {
+        fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
+        return -E_FAILURE;
+    }
+#elif defined(_WIN32) || defined(_WIN64)
+    if (0 > (snprintf(cst_path, SYS_CMD_LEN, "%s/mingw32/bin/cst.exe", g_sig_tool_path))) {
+        fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
+        return -E_FAILURE;
+    }
+#else
+    #error Unsupported OS
+#endif
+
+    /* Check if the CST binary exists */
+    if (access(cst_path, X_OK)) {
+        DEBUG("CST tool is not found at %s\n", cst_path);
+        return -E_FAILURE;
+    }
+    
+    return E_OK;
+}
+
+/*
+ * @brief       Common function to call SPSPDK nxpimage to sign the generated 
+ *              YAML config file
+ *
+ * @param[in]   cfgname : Input YAML config filename
+ * @param[in]   ifname  : Input binary filename
+ * @param[out]  ofname  : Output signed filename
+ *
+ * @retval      -E_FAILURE : Failure
+ *               E_OK      : Success
+ */
+int sign_yaml_config(char *cfgname, char *ifname, char *ofname)
+{
+    ASSERT(cfgname, -1);
+    ASSERT(ifname, -1);
+    ASSERT(ofname, -1);
+
+    char sys_cmd[SYS_CMD_LEN] = {0};
+
+    /* Find if tool exists and capture path */
+    if (!find_spsdk_tool(&sys_cmd[0])) {
+        if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), " ahab sign --force -c %s -b %s -o %s", cfgname, ifname, ofname))) {
+            fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
+            return -E_FAILURE;
+        }
+    } else {
+        fprintf(stderr, "ERROR: SPSDK Tool not found. Exiting.\n");
+        return -E_FAILURE;
+    }
+
+    /* Execute command */
+    printf("Executing command: %s\n", sys_cmd);
+    return(system(sys_cmd));
+}
+
+/*
+ * @brief       Common function to call CST to sign the generated CSF file
+ *
+ * @param[in]   cfgname : Input CSF config filename
+ * @param[out]  ofname  : Output signed filename
+ *
+ * @retval      -E_FAILURE : Failure
+ *               E_OK      : Success
+ */
+int sign_csf(char *cfgname, char *ofname)
+{
+    ASSERT(cfgname, -1);
+    ASSERT(ofname, -1);
+
+    char sys_cmd[SYS_CMD_LEN] = {0};
+
+    /* Find if tool exists and capture path */
+    if (!find_cst_tool(&sys_cmd[0])) {
+        if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), " --i %s --o %s", cfgname, ofname))) {
+            fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
+            return -E_FAILURE;
+        }
+    } else {
+        fprintf(stderr, "ERROR: CST Tool not found. Exiting.\n");
         return -E_FAILURE;
     }
 
@@ -255,9 +378,9 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
     }
 
     /* Open CSF config file */
-    FILE *fp_cfg = fopen(g_csf_cfgfilename, "r");
+    FILE *fp_cfg = fopen(g_cfgfilename, "r");
     if (NULL == fp_cfg) {
-       fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", g_csf_cfgfilename, strerror(errno));
+       fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", g_cfgfilename, strerror(errno));
        goto err;
     }
 
@@ -294,9 +417,9 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
     fprintf(fp_csf_file, "[Install SRK]\n");
     cfg_parser(fp_cfg, rvalue, RSIZE, "srktable_file");
     if ('\0' == rvalue[0])
-        fprintf(fp_csf_file, "\tFile = \"%s/crts/SRK_1_2_3_4_table.bin\"\n", g_cst_path);
+        fprintf(fp_csf_file, "\tFile = \"%s/crts/SRK_1_2_3_4_table.bin\"\n", g_sig_tool_path);
     else
-        fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_sig_tool_path, rvalue);
 
     cfg_parser(fp_cfg, rvalue, RSIZE, "srk_source_index");
     if ('\0' == rvalue[0])
@@ -311,16 +434,16 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
         fast_auth = true;
         /* Install NOCAK */
         fprintf(fp_csf_file, "[Install NOCAK]\n");
-        fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_sig_tool_path, rvalue);
     } else {
         /* Prepare normal authentication parameters */
         /* Install CSFK */
         fprintf(fp_csf_file, "[Install CSFK]\n");
         cfg_parser(fp_cfg, rvalue, RSIZE, "csfk_file");
         if ('\0' == rvalue[0])
-            fprintf(fp_csf_file, "\tFile = \"%s/crts/CSF1_1_sha256_2048_65537_v3_usr_crt.pem\"\n", g_cst_path);
+            fprintf(fp_csf_file, "\tFile = \"%s/crts/CSF1_1_sha256_2048_65537_v3_usr_crt.pem\"\n", g_sig_tool_path);
         else
-            fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+            fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_sig_tool_path, rvalue);
     }
 
     fprintf(fp_csf_file, "[Authenticate CSF]\n");
@@ -422,9 +545,9 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
 
         cfg_parser(fp_cfg, rvalue, RSIZE, "img_file");
         if ('\0' == rvalue[0])
-            fprintf(fp_csf_file, "\tFile = \"%s/crts/IMG1_1_sha256_2048_65537_v3_usr_crt.pem\"\n", g_cst_path);
+            fprintf(fp_csf_file, "\tFile = \"%s/crts/IMG1_1_sha256_2048_65537_v3_usr_crt.pem\"\n", g_sig_tool_path);
         else
-            fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+            fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_sig_tool_path, rvalue);
     }
 
     /* Authenticate Data */
@@ -502,9 +625,9 @@ static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *cs
     }
 
     /* Open CSF config file */
-    FILE *fp_cfg = fopen(g_csf_cfgfilename, "r");
+    FILE *fp_cfg = fopen(g_cfgfilename, "r");
     if (NULL == fp_cfg) {
-       fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", g_csf_cfgfilename, strerror(errno));
+       fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", g_cfgfilename, strerror(errno));
        goto err;
     }
 
@@ -525,15 +648,15 @@ static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *cs
 
     cfg_parser(fp_cfg, rvalue, RSIZE, "srktable_file");
     if ('\0' == rvalue[0])
-        fprintf(fp_csf_file, "\tFile = \"%s/crts/SRK_1_2_3_4_table.bin\"\n", g_cst_path);
+        fprintf(fp_csf_file, "\tFile = \"%s/crts/SRK_1_2_3_4_table.bin\"\n", g_sig_tool_path);
     else
-        fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_sig_tool_path, rvalue);
 
     cfg_parser(fp_cfg, rvalue, RSIZE, "srk_source");
     if ('\0' == rvalue[0])
-        fprintf(fp_csf_file, "\tSource = \"%s/crts/SRK1_sha256_prime256v1_v3_ca_crt.pem\"\n", g_cst_path);
+        fprintf(fp_csf_file, "\tSource = \"%s/crts/SRK1_sha256_prime256v1_v3_ca_crt.pem\"\n", g_sig_tool_path);
     else
-        fprintf(fp_csf_file, "\tSource = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        fprintf(fp_csf_file, "\tSource = \"%s/crts/%s\"\n", g_sig_tool_path, rvalue);
 
     cfg_parser(fp_cfg, rvalue, RSIZE, "srk_source_index");
     if ('\0' == rvalue[0])
@@ -559,7 +682,7 @@ static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *cs
     if ('\0' != rvalue[0]) {
         fprintf(fp_csf_file, "[Install Certificate]\n");
 
-        fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_cst_path, rvalue);
+        fprintf(fp_csf_file, "\tFile = \"%s/crts/%s\"\n", g_sig_tool_path, rvalue);
 
         cfg_parser(fp_cfg, rvalue, RSIZE, "sgk_permissions");
         if ('\0' == rvalue[0])
@@ -587,6 +710,189 @@ static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *cs
 err:
     FCLOSE(fp_csf_file);
     FCLOSE(fp_cfg);
+    return -E_FAILURE;
+}
+
+/*
+ * @brief       Create YAML config file for IVT type v3
+ *
+ * @param[in]   yaml_filename   : YAML config filename to be populated
+ *
+ * @retval     -E_FAILURE       : Failure
+ *              E_OK            : Success
+ */
+static int create_spsdk_yaml_file(char *yaml_filename)
+{
+    ASSERT(yaml_filename, -1);
+
+    char rvalue[RSIZE] = {0};
+
+    /* Create YAML file with config parameters */
+    FILE *fp_yaml_file = fopen(yaml_filename, "w");
+    if (NULL == fp_yaml_file ) {
+        fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", yaml_filename, strerror(errno));
+        goto err;
+    }
+
+    /* Open nxpimage config file */
+    FILE *fp_cfg = fopen(g_cfgfilename, "r");
+    if (NULL == fp_cfg) {
+       fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", g_cfgfilename, strerror(errno));
+       goto err;
+    }
+
+    /* Populate YAML config file with appropriate parameters */
+
+    /* SoC Family */
+    cfg_parser(fp_cfg, rvalue, RSIZE, "family");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "family: mimx9352\n");
+    else
+        fprintf(fp_yaml_file, "family: %s\n", rvalue);
+
+    /* SRK Set (NXP/OEM) */
+    cfg_parser(fp_cfg, rvalue, RSIZE, "srk_set");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "srk_set: oem\n");
+    else
+        fprintf(fp_yaml_file, "srk_set: %s\n", rvalue);
+
+    /* Used SRK ID */
+    cfg_parser(fp_cfg, rvalue, RSIZE, "used_srk_id");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "used_srk_id: 0\n");
+    else
+        fprintf(fp_yaml_file, "used_srk_id: %s\n", rvalue);
+
+    /* SRK revoke mask */
+    cfg_parser(fp_cfg, rvalue, RSIZE, "srk_revoke_mask");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "srk_revoke_mask: '0x00'\n");
+    else
+        fprintf(fp_yaml_file, "srk_revoke_mask: '%s'\n", rvalue);
+
+    /* GDET configuration */
+    cfg_parser(fp_cfg, rvalue, RSIZE, "gdet_runtime_behavior");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "gdet_runtime_behavior: disabled\n");
+    else
+        fprintf(fp_yaml_file, "gdet_runtime_behavior: %s\n", rvalue);
+
+    /* Fuse Version */
+    cfg_parser(fp_cfg, rvalue, RSIZE, "fuse_version");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "fuse_version: 0\n");
+    else
+        fprintf(fp_yaml_file, "fuse_version: %s\n", rvalue);
+
+    /* Sofware Version */
+    cfg_parser(fp_cfg, rvalue, RSIZE, "sw_version");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "sw_version: 0\n");
+    else
+        fprintf(fp_yaml_file, "sw_version: %s\n", rvalue);
+
+    /* Signature Provider to send password as a file along with the priv key */
+    cfg_parser(fp_cfg, rvalue, RSIZE, "signature_provider");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "signature_provider: type=file;file_path=%s/keys/SRK1_sha256_prime256v1_v3_ca_key.pem;password=%s/keys/key_pass.txt\n", g_sig_tool_path, g_sig_tool_path);
+    else
+        fprintf(fp_yaml_file, "signature_provider: type=file;file_path=%s/keys/%s;password=%s/keys/key_pass.txt\n", g_sig_data_path, rvalue, g_sig_data_path);
+
+    /* SRK Table */
+    fprintf(fp_yaml_file, "srk_table:\n");
+    cfg_parser(fp_cfg, rvalue, RSIZE, "flag_ca");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "  flag_ca: true\n");
+    else
+        fprintf(fp_yaml_file, "  flag_ca: %s\n", rvalue);
+
+    /* SRK Array to build SRK Table */
+    fprintf(fp_yaml_file, "  srk_array:\n");
+    cfg_parser(fp_cfg, rvalue, RSIZE, "srk_array_0");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "    - %s/crts/SRK1_sha256_prime256v1_v3_ca_crt.pem\n", g_sig_tool_path);
+    else
+        fprintf(fp_yaml_file, "    - %s/crts/%s\n", g_sig_data_path, rvalue);
+
+    cfg_parser(fp_cfg, rvalue, RSIZE, "srk_array_1");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "    - %s/crts/SRK2_sha256_prime256v1_v3_ca_crt.pem\n", g_sig_tool_path);
+    else
+        fprintf(fp_yaml_file, "    - %s/crts/%s\n", g_sig_data_path, rvalue);
+
+    cfg_parser(fp_cfg, rvalue, RSIZE, "srk_array_2");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "    - %s/crts/SRK3_sha256_prime256v1_v3_ca_crt.pem\n", g_sig_tool_path);
+    else
+        fprintf(fp_yaml_file, "    - %s/crts/%s\n", g_sig_data_path, rvalue);
+
+    cfg_parser(fp_cfg, rvalue, RSIZE, "srk_array_3");
+    if ('\0' == rvalue[0])
+        fprintf(fp_yaml_file, "    - %s/crts/SRK4_sha256_prime256v1_v3_ca_crt.pem\n", g_sig_tool_path);
+    else
+        fprintf(fp_yaml_file, "    - %s/crts/%s\n", g_sig_data_path, rvalue);
+
+    /* DONE */
+
+    printf("INFO: %s generated\n", yaml_filename);
+
+    FCLOSE(fp_yaml_file);
+    FCLOSE(fp_cfg);
+    return E_OK;
+
+err:
+    FCLOSE(fp_yaml_file);
+    FCLOSE(fp_cfg);
+    return -E_FAILURE;
+}
+
+/*
+ * @brief       Sign image of IVT type v3
+ *
+ * @param[in]   ifname_full : Input filename
+ * @param[out]  ofname      : Ouput filename
+ *
+ * @retval       E_OK           : Success
+ *              -E_FAILURE      : Failure
+ */
+static int sign_container_spsdk(char *ifname_full, char *ofname)
+{
+
+    char *yaml_config_filename = NULL;
+    yaml_config_filename = calloc(FILENAME_MAX_LEN, sizeof(char));
+    if (NULL == yaml_config_filename) {
+        fprintf(stderr, "ERROR: Error allocating memory; %s\n", strerror(errno));
+        goto err;
+    }
+
+    /* Prepare YAML config filename */
+    if (0 > (snprintf(yaml_config_filename, FILENAME_MAX_LEN, "nxpimage_config.yaml"))) {
+        fprintf(stderr, "ERROR: YAML filename build unsuccessful. Exiting.\n");
+        goto err;
+    }
+
+    DEBUG("nxpimage YAML config filename = %s\n", yaml_config_filename);
+
+    /* Create YAML config file */
+    if (create_spsdk_yaml_file(yaml_config_filename)) {
+        fprintf(stderr, "ERROR: Failed to create YAML config file properly: %s\n", yaml_config_filename);
+        goto err;
+    }
+
+    DEBUG("nxpimage YAML config filename created = %s\n", yaml_config_filename);
+
+    if (sign_yaml_config(yaml_config_filename, ifname_full, ofname)) {
+        fprintf(stderr, "ERROR: Failed to sign the image using: %s\n", yaml_config_filename);
+        goto err;
+    }
+
+    FREE(yaml_config_filename);
+
+    return E_OK;
+
+err:
+    FREE(yaml_config_filename);
     return -E_FAILURE;
 }
 
@@ -898,7 +1204,7 @@ static int insert_csf(char *ifile1, char *ifile2, uint32_t offset)
 
     /* Allocate memory to the buffer */
     buf = malloc(ifile1_size);
-    if (buf == NULL) {
+    if (NULL == buf || 0 == buf) {
         fprintf(stderr, "ERROR: Error allocating memory; %s\n", strerror(errno));
         goto err;
     }
@@ -1097,12 +1403,12 @@ static int generate_csf_v1(int idx, char *csf_file)
     }
 
 #if defined(__linux__)
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/linux64/bin/cst ", g_cst_path))) {
+    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/linux64/bin/cst ", g_sig_tool_path))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         goto err;
     }
 #elif defined(_WIN32) || defined(_WIN64)
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/mingw32/bin/cst.exe ", g_cst_path))) {
+    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/mingw32/bin/cst.exe ", g_sig_tool_path))) {
         fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
         return -E_FAILURE;
     }
@@ -1504,8 +1810,8 @@ err_:
 static void print_usage(void)
 {
     int i = 0;
-    printf("CST Signer: CST helper tool to auto-sign image.\n"
-        "Usage: CST_PATH=<cst-path> ./cst_signer ");
+    printf("IMX Signer: IMX helper tool to auto-sign image using CST/SPSDK.\n"
+        "Usage: SIG_TOOL_PATH=<sig-tool-path> SIG_DATA_PATH=<sig-data-path>./cst_signer ");
     do {
         printf("-%c <%s> ", long_opt[i].val, long_opt[i].name);
         i++;
@@ -1592,14 +1898,32 @@ int main(int argc, char **argv)
     uint8_t *ibuf = NULL;
     long int ibuf_size = 0;
     
-    bool ret = 0;
+    bool ret = -E_FAILURE;
     int next_opt = 0;
 
-    /* Get CST_PATH environment value. getenv is cross platform compatible */
-    g_cst_path = getenv("CST_PATH");
-    if(!g_cst_path){
-        fprintf(stderr, "ERROR: Environment variable \"CST_PATH\" is mandatory\n");
+    char *sig_tool_path_buf = calloc(SYS_CMD_LEN, sizeof(char));
+    if (NULL == sig_tool_path_buf || 0 == sig_tool_path_buf) {
+        fprintf(stderr, "ERROR: Error allocating memory; %s\n", strerror(errno));
         goto err;
+    }
+
+    /* Get SIG_TOOL_PATH environment value. getenv is cross platform compatible */
+    g_sig_tool_path = getenv("SIG_TOOL_PATH");
+    if(!g_sig_tool_path){
+        fprintf(stderr, "ERROR: Environment variable \"SIG_TOOL_PATH\" is mandatory\n");
+        goto err;
+    }
+
+    /* Get SIG_DATA_PATH environment value. getenv is cross platform compatible */
+    g_sig_data_path = getenv("SIG_DATA_PATH");
+    if(!g_sig_data_path){
+        g_sig_data_path = g_sig_tool_path;
+    }
+
+    /* Checking if processor is available */
+    if (!(system(NULL))) {
+        fprintf(stderr, "ERROR: Command processor is not available. Exiting.\n");
+        return -E_FAILURE;
     }
 
     /* Handle command line options */
@@ -1630,7 +1954,7 @@ int main(int argc, char **argv)
                 break;
             /* Input YAML config file */
             case 'c':
-                g_csf_cfgfilename = optarg;
+                g_cfgfilename = optarg;
                 break;
             /* Enable debug log */
             case 'd':
@@ -1651,10 +1975,12 @@ int main(int argc, char **argv)
         }
     } while (next_opt != -1);
     
+    DEBUG("SIG_TOOL_PATH set to: \"%s\n\"", g_sig_tool_path);
+    DEBUG("SIG_DATA_PATH set to: \"%s\n\"", g_sig_data_path);
     DEBUG("Input filename = %s\n", ifname);
     DEBUG("Output filename = %s\n", ofname);
-    if (NULL != g_csf_cfgfilename)
-        DEBUG("Input CSF Configuration filename = %s\n", g_csf_cfgfilename);
+    if (NULL != g_cfgfilename)
+        DEBUG("Input CSF Configuration filename = %s\n", g_cfgfilename);
 
     /* Allocate buffer for input file */
     ibuf = alloc_buffer(fp_in, ifname_full);
@@ -1672,6 +1998,7 @@ int main(int argc, char **argv)
     }
 
     unsigned long off = 0;
+
     /* Parse w.r.t type of IVT */
     if (IS_AHAB_IMAGE(ibuf, ibuf_size, g_ivt_v3_ahab_array, g_ivt_v3_mask, off)) {
         g_image_offset += off;
@@ -1679,13 +2006,29 @@ int main(int argc, char **argv)
 
         DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n",
               hdr_v3->tag, hdr_v3->length, hdr_v3->version);
-        ret = sign_container(ibuf, ibuf_size, ifname_full, ofname);
+
+        if (!find_cst_tool(sig_tool_path_buf)) {
+            /* If CST is found, sign with CST tool */
+            ret = sign_container(ibuf, ibuf_size, ifname_full, ofname);
+        } else if (!find_spsdk_tool(sig_tool_path_buf)) {
+            /* If SPSDK is found, sign with SPSDK NXPIMAGE tool */
+            ret = sign_container_spsdk(ifname_full, ofname);
+        } else {
+            fprintf(stderr, "ERROR: No signer tool found. Exiting.\n");
+            goto err;
+        }
+
     } else if (IS_HAB_IMAGE(ibuf, ibuf_size, g_ivt_v1, g_ivt_v1_mask, off, g_image_offset)) {
         g_image_offset += off;
         ivt_t *ivt = (ivt_t *)(ibuf + off);
         DEBUG("IVT header = TAG:0x%02X | LEN:0x%04X | VER:0x%02X\n",
               ivt->ivt_hdr.tag, ivt->ivt_hdr.length, ivt->ivt_hdr.version);
-        ret = sign_hab_image(ibuf, ibuf_size, ifname_full, ofname);
+        if (!find_cst_tool(sig_tool_path_buf)) {
+            ret = sign_hab_image(ibuf, ibuf_size, ifname_full, ofname);
+        } else {
+            fprintf(stderr, "ERROR: CST tool not found. Only CST tool is supported to sign HAB images\n");
+            goto err;
+        }
     } else {
         fprintf(stderr, "ERROR: Invalid IVT tag: 0x%x\n", (ibuf + g_image_offset)[3]);
         goto err;
@@ -1695,6 +2038,7 @@ int main(int argc, char **argv)
         DEBUG("%s was successfully signed. %s was generated.\n", ifname_full, ofname);
         FCLOSE(fp_in);
         FREE(ibuf);
+        FREE(sig_tool_path_buf);
         return E_OK;
     } else
         goto err;
@@ -1703,5 +2047,6 @@ int main(int argc, char **argv)
 err:
     FCLOSE(fp_in);
     FREE(ibuf);
+    FREE(sig_tool_path_buf);
     return -E_FAILURE;
 }
