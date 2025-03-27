@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#ifndef CST_SIGNER_H
-#define CST_SIGNER_H
+#ifndef IMX_SIGNER_H
+#define IMX_SIGNER_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -311,4 +311,4 @@ int copy_files(char *ifname, char *ofname);
 long int get_file_size(FILE *fp, char *input_file);
 unsigned char *alloc_buffer(FILE *fp, char *input_file);
 
-#endif /* CST_SIGNER_H */
+#endif /* IMX_SIGNER_H */

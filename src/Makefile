@@ -14,24 +14,26 @@ PREFIX   ?= /usr/local
 BINDIR   ?= $(PREFIX)/bin
 DATADIR  ?= $(PREFIX)/share
 
-#DEPS = cst_signer.h cfg_parser.h mkimage_helper.h
-SRCS = cst_signer.c cfg_parser.c mkimage_helper.c fdt.c
+SIGNER_NAME = imx_signer
+
+#DEPS = $(SIGNER_NAME).h cfg_parser.h mkimage_helper.h
+SRCS = $(SIGNER_NAME).c cfg_parser.c mkimage_helper.c fdt.c
 OBJS = $(SRCS:.c=.o)
 
 .PHONY: all install clean
 
-all: cst_signer
+all: $(SIGNER_NAME)
 
 %.o: %.c
 	$(CC) -c $(INCLUDES) $(CFLAGS) $(LDFLAGS) $(CPPFLAGS) $< -o $@
 
-cst_signer: $(OBJS)
+$(SIGNER_NAME): $(OBJS)
 	$(CC) $(INCLUDES) $(CFLAGS) $(LDFLAGS) $(CPPFLAGS) -o $@ $^
 
-install: cst_signer
-	install -D -m 0755 cst_signer $(DESTDIR)/$(BINDIR)/cst_signer
-	install -D -m 0755 -t $(DESTDIR)$(DATADIR)/doc/cst_signer \
+install: $(SIGNER_NAME)
+	install -D -m 0755 $(SIGNER_NAME) $(DESTDIR)/$(BINDIR)/$(SIGNER_NAME)
+	install -D -m 0755 -t $(DESTDIR)$(DATADIR)/doc/$(SIGNER_NAME) \
             ../csf_ahab.cfg.sample \
             ../csf_hab4.cfg.sample
 clean:
-	$(RM) cst_signer *.o
+	$(RM) $(SIGNER_NAME) *.o

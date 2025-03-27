@@ -6,7 +6,7 @@
 
 #include <limits.h>
 
-#include <cst_signer.h>
+#include <imx_signer.h>
 #include <cfg_parser.h>
 #include <mkimage_helper.h>
 #include <fdt.h>

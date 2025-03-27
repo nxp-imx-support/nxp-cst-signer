@@ -6,7 +6,7 @@
 #ifndef MKIMAGE_HELPER_H
 #define MKIMAGE_HELPER_H
 
-#ifndef CST_SIGNER_H
+#ifndef IMX_SIGNER_H
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -64,7 +64,7 @@ typedef struct {
     uint32_t padding;
 } __attribute__((packed)) flash_header_v3_t;
 
-#endif /* CST_SIGNER_H */
+#endif /* IMX_SIGNER_H */
 
 int get_container_size(flash_header_v3_t *);
 
