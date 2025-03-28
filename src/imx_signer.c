@@ -227,10 +227,15 @@ int sign_yaml_config(char *cfgname, char *ifname, char *ofname)
     ASSERT(ofname, -1);
 
     char sys_cmd[SYS_CMD_LEN] = {0};
+    char spsdk_extra_param[10] = {0};
+
+    /* Add debug info to the tool output */
+    if (g_debug)
+        strncpy(spsdk_extra_param, "-v", 3);
 
     /* Find if tool exists and capture path */
     if (!find_spsdk_tool(&sys_cmd[0])) {
-        if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), " ahab sign --force -c %s -b %s -o %s", cfgname, ifname, ofname))) {
+        if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), " %s ahab sign --force -c %s -b %s -o %s", spsdk_extra_param, cfgname, ifname, ofname))) {
             fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
             return -E_FAILURE;
         }
@@ -259,10 +264,16 @@ int sign_csf(char *cfgname, char *ofname)
     ASSERT(ofname, -1);
 
     char sys_cmd[SYS_CMD_LEN] = {0};
+    char cst_extra_param[10] = {0};
+
+    /* Add debug info to the tool output */
+    if (g_debug) {
+        strncpy(cst_extra_param, "--verbose", 10);
+    }
 
     /* Find if tool exists and capture path */
     if (!find_cst_tool(&sys_cmd[0])) {
-        if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), " --i %s --o %s", cfgname, ofname))) {
+        if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), " %s --i %s --o %s", cst_extra_param, cfgname, ofname))) {
             fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
             return -E_FAILURE;
         }
@@ -1385,7 +1396,6 @@ static int generate_csf_v1(int idx, char *csf_file)
 {
     char csf_ifilename[100UL] = {0};
     char csf_ofilename[100UL] = {0};
-    char sys_cmd[SYS_CMD_LEN] = {0};
 
     if (0 > (snprintf(csf_ifilename, sizeof(csf_ifilename), "csf_image%d.txt", idx))) {
         fprintf(stderr, "ERROR: Cannot populate CSF file name.\n");
@@ -1402,30 +1412,13 @@ static int generate_csf_v1(int idx, char *csf_file)
         goto err;
     }
 
-#if defined(__linux__)
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/linux64/bin/cst ", g_sig_tool_path))) {
-        fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
-        goto err;
-    }
-#elif defined(_WIN32) || defined(_WIN64)
-    if (0 > (snprintf(sys_cmd, SYS_CMD_LEN, "%s/mingw32/bin/cst.exe ", g_sig_tool_path))) {
-        fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
-        return -E_FAILURE;
-    }
-#else
-    #error Unsupported OS
-#endif
-
-    if (0 > (snprintf(sys_cmd + strlen(sys_cmd), (SYS_CMD_LEN - strlen(sys_cmd)), "--i %s --o %s", csf_ifilename, csf_ofilename))) {
-        fprintf(stderr, "ERROR: System command build unsuccessful. Exiting.\n");
+    if (sign_csf(csf_ifilename, csf_ofilename)) {
+        fprintf(stderr, "ERROR: Failed to sign the image using: %s\n", csf_ifilename);
         goto err;
     }
 
     memcpy(csf_file, csf_ofilename, strlen(csf_ofilename));
-    /* Execute command */
-    printf("Executing command: %s\n", sys_cmd);
-    if(system(sys_cmd) == 0)
-        return E_OK;
+    return E_OK;
 
 err:
     return -E_FAILURE;
@@ -1496,14 +1489,14 @@ static int process_ivt_image(unsigned long off, uint8_t *infile_buf,
     err = create_csf_file_v1(g_images, loop, ofname);
     if (err) {
         errno = EFAULT;
-        fprintf(stderr, "ERROR: Couldn't not create csf txt file %s\n", strerror(EFAULT));
+        fprintf(stderr, "ERROR: Couldn't create csf txt file %s\n", strerror(EFAULT));
         return -E_FAILURE;
     }
 
     err = generate_csf_v1(loop, csf_file);
     if (err) {
         errno = EFAULT;
-        fprintf(stderr, "ERROR: Couldn't not generate csf bin file %s\n", strerror(EFAULT));
+        fprintf(stderr, "ERROR: Couldn't generate csf bin file %s\n", strerror(EFAULT));
         return -E_FAILURE;
     }
 
@@ -1512,7 +1505,7 @@ static int process_ivt_image(unsigned long off, uint8_t *infile_buf,
         err = concat_files(ofname, csf_file);
         if (err) {
             errno = EFAULT;
-            fprintf(stderr, "ERROR: Couldn't not concatenate %s with %s %s\n",
+            fprintf(stderr, "ERROR: Couldn't concatenate %s with %s %s\n",
                     ofname, csf_file, strerror(EFAULT));
             return -E_FAILURE;
         }
@@ -1673,14 +1666,14 @@ static int process_fdt_images(unsigned long off, uint8_t *infile_buf,
         err = create_csf_file_v1(g_images, loop, ofname);
         if (err) {
             errno = EFAULT;
-            fprintf(stderr, "ERROR: Couldn't not create csf txt file %s\n", strerror(EFAULT));
+            fprintf(stderr, "ERROR: Couldn't create csf txt file %s\n", strerror(EFAULT));
             return -E_FAILURE;
         }
 
         err = generate_csf_v1(loop, csf_file);
         if (err) {
             errno = EFAULT;
-            fprintf(stderr, "ERROR: Couldn't not generate csf bin file %s\n", strerror(EFAULT));
+            fprintf(stderr, "ERROR: Couldn't generate csf bin file %s\n", strerror(EFAULT));
             return -E_FAILURE;
         }
 
@@ -1975,8 +1968,8 @@ int main(int argc, char **argv)
         }
     } while (next_opt != -1);
     
-    DEBUG("SIG_TOOL_PATH set to: \"%s\n\"", g_sig_tool_path);
-    DEBUG("SIG_DATA_PATH set to: \"%s\n\"", g_sig_data_path);
+    DEBUG("SIG_TOOL_PATH set to: \"%s\"\n", g_sig_tool_path);
+    DEBUG("SIG_DATA_PATH set to: \"%s\"\n", g_sig_data_path);
     DEBUG("Input filename = %s\n", ifname);
     DEBUG("Output filename = %s\n", ofname);
     if (NULL != g_cfgfilename)
