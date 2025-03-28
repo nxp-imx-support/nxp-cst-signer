@@ -59,8 +59,20 @@ void cfg_parser(FILE *fp_cfgfile, char *res_val, unsigned int res_size, char *ex
         /* Get value of the corresponding key */
         res = get_value(line_buf, exp_key);
         if (NULL != res) {
-            /* Copy until the new line character */
-            strncpy(res_val, res, strlen(res) - 1);
+            if (strncmp(&line_buf[read_len - 1], "\n", 1)) {
+                /* Copy until the last character when no LF found */
+                strncpy(res_val, res, strlen(res));
+            } else {
+#if defined(__linux__)
+                /* Copy until the LF character */
+                strncpy(res_val, res, strlen(res) - 1);
+#elif defined(_WIN32) || defined(_WIN64)
+                /* Copy until the CRLF character */
+                strncpy(res_val, res, strlen(res) - 2);
+#else
+    #error Unsupported OS
+#endif
+            }
             break;
         }
     }
