@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2024 NXP
+ * Copyright 2021-2025 NXP
  * SPDX-License-Identifier: GPL-2.0-only
  *
  */
