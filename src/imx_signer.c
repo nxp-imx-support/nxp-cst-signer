@@ -1902,14 +1902,14 @@ int main(int argc, char **argv)
 
     /* Get SIG_TOOL_PATH environment value. getenv is cross platform compatible */
     g_sig_tool_path = getenv("SIG_TOOL_PATH");
-    if(!g_sig_tool_path){
+    if(!g_sig_tool_path || g_sig_tool_path[0] == '\0'){
         fprintf(stderr, "ERROR: Environment variable \"SIG_TOOL_PATH\" is mandatory\n");
         goto err;
     }
 
     /* Get SIG_DATA_PATH environment value. getenv is cross platform compatible */
     g_sig_data_path = getenv("SIG_DATA_PATH");
-    if(!g_sig_data_path){
+    if(!g_sig_data_path || g_sig_data_path[0] == '\0'){
         g_sig_data_path = g_sig_tool_path;
     }
 
