@@ -378,21 +378,22 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
 
     if (0 > (snprintf(csf_filename, sizeof(csf_filename), "csf_image%d.txt", idx))) {
         fprintf(stderr, "ERROR: Cannot populate CSF file name.\n");
-        goto err;
+        return -E_FAILURE;
     }
 
     /* Create CSF file with CSF parameters */
     FILE *fp_csf_file = fopen(csf_filename, "w");
     if (NULL == fp_csf_file ) {
         fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", csf_filename, strerror(errno));
-        goto err;
+        return -E_FAILURE;
     }
 
     /* Open CSF config file */
     FILE *fp_cfg = fopen(g_cfgfilename, "r");
     if (NULL == fp_cfg) {
        fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", g_cfgfilename, strerror(errno));
-       goto err;
+       FCLOSE(fp_csf_file);
+       return -E_FAILURE;
     }
 
     /* Populate CSF file with appropriate parameters */
@@ -602,11 +603,6 @@ static int create_csf_file_v1(image_block_t *blocks, int idx, char *ofname)
     FCLOSE(fp_csf_file);
     FCLOSE(fp_cfg);
     return E_OK;
-
-err:
-    FCLOSE(fp_csf_file);
-    FCLOSE(fp_cfg);
-    return -E_FAILURE;
 }
 
 
@@ -632,14 +628,15 @@ static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *cs
     FILE *fp_csf_file = fopen(csf_filename, "w");
     if (NULL == fp_csf_file ) {
         fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", csf_filename, strerror(errno));
-        goto err;
+        return -E_FAILURE;
     }
 
     /* Open CSF config file */
     FILE *fp_cfg = fopen(g_cfgfilename, "r");
     if (NULL == fp_cfg) {
-       fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", g_cfgfilename, strerror(errno));
-       goto err;
+        fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", g_cfgfilename, strerror(errno));
+        FCLOSE(fp_csf_file);
+        return -E_FAILURE;
     }
 
     /* Populate CSF file with appropriate parameters */
@@ -717,11 +714,6 @@ static int create_csf_file_v3(char *csf_filename, char *ifname, csf_params_t *cs
     FCLOSE(fp_csf_file);
     FCLOSE(fp_cfg);
     return E_OK;
-
-err:
-    FCLOSE(fp_csf_file);
-    FCLOSE(fp_cfg);
-    return -E_FAILURE;
 }
 
 /*
@@ -742,14 +734,15 @@ static int create_spsdk_yaml_file(char *yaml_filename)
     FILE *fp_yaml_file = fopen(yaml_filename, "w");
     if (NULL == fp_yaml_file ) {
         fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", yaml_filename, strerror(errno));
-        goto err;
+        return -E_FAILURE;
     }
 
     /* Open nxpimage config file */
     FILE *fp_cfg = fopen(g_cfgfilename, "r");
     if (NULL == fp_cfg) {
-       fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", g_cfgfilename, strerror(errno));
-       goto err;
+        fprintf(stderr, "ERROR: Couldn't open file: %s; %s\n", g_cfgfilename, strerror(errno));
+        FCLOSE(fp_yaml_file);
+        return -E_FAILURE;
     }
 
     /* Populate YAML config file with appropriate parameters */
@@ -851,11 +844,6 @@ static int create_spsdk_yaml_file(char *yaml_filename)
     FCLOSE(fp_yaml_file);
     FCLOSE(fp_cfg);
     return E_OK;
-
-err:
-    FCLOSE(fp_yaml_file);
-    FCLOSE(fp_cfg);
-    return -E_FAILURE;
 }
 
 /*
